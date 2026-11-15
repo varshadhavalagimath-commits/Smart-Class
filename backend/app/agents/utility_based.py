@@ -98,6 +98,11 @@ class UtilityBasedAgent(BaseAgent):
                 if percepts.temperature <= config.temp_comfort_max and fans:
                     compliance = min(compliance, 65.0)
 
+                # Rule 5: Active class in warm/hot temperature requires cooling (mandatory thermal management)
+                if percepts.temperature > config.temp_comfort_max and not fans:
+                    comfort = min(comfort, 30.0)
+                    compliance = min(compliance, 25.0)  # Mandatory cooling omitted during excessive heat
+
             total_u = calculate_total_utility(
                 comfort=comfort,
                 efficiency=efficiency,
