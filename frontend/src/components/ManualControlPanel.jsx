@@ -10,7 +10,8 @@ import {
   Clock, 
   BookOpen, 
   DoorClosed,
-  Zap
+  Zap,
+  ArrowDownCircle
 } from 'lucide-react';
 
 export default function ManualControlPanel({ 
@@ -28,9 +29,24 @@ export default function ManualControlPanel({
   const [simulatedTime, setSimulatedTime] = useState('09:00 AM');
   const [validationError, setValidationError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
+  const [hasInitialized, setHasInitialized] = useState(false);
 
-  // Sync with incoming percepts when currentPercepts changes
+  // Initialize form fields ONCE on initial mount so polling does NOT overwrite user typing!
   useEffect(() => {
+    if (currentPercepts && !hasInitialized) {
+      setStudents(currentPercepts.students_count ?? 30);
+      setTemperature(currentPercepts.temperature ?? 24.0);
+      setLightIntensity(currentPercepts.light_intensity ?? 400.0);
+      setActivity(currentPercepts.activity ?? 'Lecture');
+      setDoorStatus(currentPercepts.door_status ?? 'Closed');
+      setWindowStatus(currentPercepts.window_status ?? 'Closed');
+      setSimulatedTime(currentPercepts.simulated_time ?? '09:00 AM');
+      setHasInitialized(true);
+    }
+  }, [currentPercepts, hasInitialized]);
+
+  // Explicit sync function when user wants to copy live readings into manual form
+  const handleSyncFromLive = () => {
     if (currentPercepts) {
       setStudents(currentPercepts.students_count ?? 0);
       setTemperature(currentPercepts.temperature ?? 24.0);
@@ -39,8 +55,10 @@ export default function ManualControlPanel({
       setDoorStatus(currentPercepts.door_status ?? 'Closed');
       setWindowStatus(currentPercepts.window_status ?? 'Closed');
       setSimulatedTime(currentPercepts.simulated_time ?? '09:00 AM');
+      setSuccessMessage('Synced manual form with live sensor readings.');
+      setTimeout(() => setSuccessMessage(''), 3000);
     }
-  }, [currentPercepts]);
+  };
 
   const handleApply = async (e) => {
     e?.preventDefault();
@@ -65,6 +83,8 @@ export default function ManualControlPanel({
       return;
     }
 
+    const trimmedTime = simulatedTime ? simulatedTime.trim() : '09:00 AM';
+
     try {
       await onApplyManual({
         students_count: s,
@@ -73,10 +93,10 @@ export default function ManualControlPanel({
         activity,
         door_status: doorStatus,
         window_status: windowStatus,
-        simulated_time: simulatedTime,
+        simulated_time: trimmedTime,
       });
-      setSuccessMessage('Manual parameters applied! Agent evaluated updated percepts.');
-      setTimeout(() => setSuccessMessage(''), 3500);
+      setSuccessMessage(`Manual changes applied successfully! Time: ${trimmedTime}, Temp: ${t}°C, Students: ${s}. Simulation locked to Manual mode.`);
+      setTimeout(() => setSuccessMessage(''), 4500);
     } catch (err) {
       setValidationError(err.message || 'Failed to apply manual input');
     }
@@ -88,18 +108,22 @@ export default function ManualControlPanel({
       setTemperature(35.0);
       setLightIntensity(450.0);
       setActivity('Lecture');
+      setSimulatedTime('11:00 AM');
     } else if (preset === 'vacant') {
       setStudents(0);
       setActivity('No class');
+      setSimulatedTime('04:00 PM');
     } else if (preset === 'dark') {
       setStudents(30);
       setLightIntensity(80.0);
       setActivity('Lecture');
+      setSimulatedTime('08:15 AM');
     } else if (preset === 'lab') {
       setStudents(28);
       setTemperature(23.0);
       setLightIntensity(350.0);
       setActivity('Lab');
+      setSimulatedTime('01:30 PM');
     }
   };
 
@@ -114,7 +138,7 @@ export default function ManualControlPanel({
       </div>
 
       <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '1.25rem' }}>
-        Directly configure environmental parameters. The active rational agent will immediately compute device actions and justify its decision.
+        Configure classroom parameters manually. When applied, automatic progression pauses, and the agent immediately recalculates device actuation.
       </p>
 
       {/* Quick Test Scenarios */}
@@ -125,9 +149,22 @@ export default function ManualControlPanel({
         borderRadius: '8px',
         border: '1px solid var(--border-color)'
       }}>
-        <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.5rem', textTransform: 'uppercase' }}>
-          ⚡ Key Test Scenarios:
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+          <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+            ⚡ 1-Click Test Scenarios:
+          </span>
+          <button
+            type="button"
+            className="btn btn-outline btn-sm"
+            onClick={handleSyncFromLive}
+            style={{ fontSize: '0.7rem', padding: '0.2rem 0.5rem' }}
+            title="Populate manual inputs with current live sensor values"
+          >
+            <ArrowDownCircle size={12} />
+            <span>Copy Live State</span>
+          </button>
         </div>
+
         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
           <button 
             type="button" 
@@ -303,23 +340,39 @@ export default function ManualControlPanel({
           </div>
 
           {/* Simulated Time */}
-          <div className="form-group">
+          <div className="form-group" style={{ gridColumn: 'span 2' }}>
             <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
               <Clock size={14} color="var(--text-muted)" />
-              <span>Simulated Time</span>
+              <span>Simulated Time (Type custom time or click preset below)</span>
             </label>
-            <input
-              type="text"
-              className="form-input"
-              value={simulatedTime}
-              onChange={(e) => setSimulatedTime(e.target.value)}
-              placeholder="e.g. 10:30 AM"
-            />
+            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.4rem' }}>
+              <input
+                type="text"
+                className="form-input"
+                value={simulatedTime}
+                onChange={(e) => setSimulatedTime(e.target.value)}
+                placeholder="e.g. 10:30 AM"
+              />
+            </div>
+            {/* Quick time selection pills */}
+            <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
+              {['08:00 AM', '09:00 AM', '11:00 AM', '11:30 AM', '12:00 PM', '01:00 PM', '04:00 PM'].map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => setSimulatedTime(t)}
+                  className={`btn btn-sm ${simulatedTime === t ? 'btn-primary' : 'btn-outline'}`}
+                  style={{ fontSize: '0.7rem', padding: '0.2rem 0.45rem' }}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
         {/* Action Buttons */}
-        <div style={{ display: 'flex', gap: '0.75rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1rem', flexWrap: 'wrap' }}>
           <button
             type="submit"
             className="btn btn-primary"

@@ -48,13 +48,12 @@ class SimulationManager:
         self.current_devices = self.last_decision.selected_state
 
     def get_state(self) -> SimulationState:
-        perceived = self.environment.read_sensors()
         return SimulationState(
             is_running=self.is_running,
             step_count=self.step_count,
             simulated_time=self.environment.ground_truth.simulated_time,
-            schedule_phase=self.environment.current_phase_description(),
-            current_percepts=perceived,
+            schedule_phase=self.environment.current_phase_description() if self.config.mode == "automatic" else "Manual Control Mode",
+            current_percepts=self.environment.current_perceived,
             raw_percepts=self.environment.ground_truth,
             active_agent=self.config.active_agent,
             current_devices=self.current_devices,
@@ -120,8 +119,10 @@ class SimulationManager:
         """
         Mode B: Manual Entry
         Updates the classroom environment directly, immediately triggers agent decision.
+        Pauses automatic schedule ticker so user manual values remain stable.
         """
         self.config.mode = "manual"
+        self.is_running = False  # Pause automatic ticker to prevent immediate overwrite!
         perceived, ground_truth = self.environment.set_manual_percepts(
             students_count=req.students_count,
             temperature=req.temperature,

@@ -88,6 +88,8 @@ class ClassroomEnvironment:
         self.noise_enabled: bool = False
         # Ground truth state
         self.ground_truth = self._get_schedule_state(0)
+        # Cached percepts to avoid fluctuating readings on every state poll
+        self.current_perceived = self.read_sensors()
 
     def _get_schedule_state(self, index: int) -> ClassroomPercepts:
         step = self.schedule[index % len(self.schedule)]
@@ -112,8 +114,8 @@ class ClassroomEnvironment:
         """
         self.schedule_index = (self.schedule_index + 1) % len(self.schedule)
         self.ground_truth = self._get_schedule_state(self.schedule_index)
-        perceived = self.read_sensors()
-        return perceived, self.ground_truth
+        self.current_perceived = self.read_sensors()
+        return self.current_perceived, self.ground_truth
 
     def set_manual_percepts(
         self,
@@ -126,9 +128,9 @@ class ClassroomEnvironment:
         simulated_time: str = None
     ) -> Tuple[ClassroomPercepts, ClassroomPercepts]:
         """
-        Manually sets the classroom environment.
+        Manually sets the classroom environment with explicit values.
         """
-        current_time = simulated_time if simulated_time else self.ground_truth.simulated_time
+        current_time = simulated_time.strip() if simulated_time and str(simulated_time).strip() else self.ground_truth.simulated_time
         self.ground_truth = ClassroomPercepts(
             students_count=students_count,
             temperature=temperature,
@@ -139,21 +141,22 @@ class ClassroomEnvironment:
             simulated_time=current_time,
             noise_enabled=self.noise_enabled
         )
-        perceived = self.read_sensors()
-        return perceived, self.ground_truth
+        self.current_perceived = self.read_sensors()
+        return self.current_perceived, self.ground_truth
 
     def read_sensors(self) -> ClassroomPercepts:
         """
         Generates sensor readings from ground truth, optionally injecting realistic sensor noise.
+        Only called when a step or manual update occurs to prevent continuous jitter.
         """
         if not self.noise_enabled:
             return self.ground_truth.model_copy()
 
         # Add slight realistic stochastic sensor noise
-        noise_temp = round(self.ground_truth.temperature + random.uniform(-1.2, 1.2), 1)
+        noise_temp = round(self.ground_truth.temperature + random.uniform(-1.0, 1.0), 1)
         noise_temp = max(15.0, min(45.0, noise_temp))
 
-        noise_light = round(self.ground_truth.light_intensity + random.uniform(-35.0, 35.0), 1)
+        noise_light = round(self.ground_truth.light_intensity + random.uniform(-25.0, 25.0), 1)
         noise_light = max(0.0, min(1000.0, noise_light))
 
         noise_students = self.ground_truth.students_count
@@ -175,4 +178,5 @@ class ClassroomEnvironment:
     def reset(self) -> Tuple[ClassroomPercepts, ClassroomPercepts]:
         self.schedule_index = 0
         self.ground_truth = self._get_schedule_state(0)
-        return self.read_sensors(), self.ground_truth
+        self.current_perceived = self.read_sensors()
+        return self.current_perceived, self.ground_truth

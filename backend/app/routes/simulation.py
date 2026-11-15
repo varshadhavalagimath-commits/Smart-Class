@@ -13,6 +13,7 @@ def get_simulation_state():
 
 @router.post("/start", response_model=SimulationState)
 def start_simulation():
+    sim_manager.config.mode = "automatic"
     sim_manager.start()
     return sim_manager.get_state()
 

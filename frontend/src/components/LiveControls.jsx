@@ -67,16 +67,16 @@ export default function LiveControls({
             display: 'flex',
             alignItems: 'center',
             gap: '0.4rem',
-            backgroundColor: '#eff6ff',
+            backgroundColor: config?.mode === 'manual' ? '#fffbeb' : '#eff6ff',
             padding: '0.35rem 0.75rem',
             borderRadius: '8px',
-            border: '1px solid #bfdbfe',
+            border: config?.mode === 'manual' ? '1px solid #fde68a' : '1px solid #bfdbfe',
             fontSize: '0.8rem',
-            color: '#1d4ed8',
+            color: config?.mode === 'manual' ? '#b45309' : '#1d4ed8',
             fontWeight: 600
           }}>
             <Activity size={14} />
-            <span>Phase: {schedulePhase} (Step {stepCount})</span>
+            <span>{config?.mode === 'manual' ? 'Mode B: Manual Control' : `Mode A: ${schedulePhase}`} (Step {stepCount})</span>
           </div>
         </div>
 
