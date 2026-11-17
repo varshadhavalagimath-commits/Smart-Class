@@ -75,6 +75,7 @@ export default function SimulatorPage({
               devices={devices}
               activeAgent={state?.active_agent}
               lastDecision={decision}
+              onStateUpdate={onStateUpdate}
             />
           </div>
 

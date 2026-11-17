@@ -83,7 +83,9 @@ class ModelBasedAgent(BaseAgent):
         new_projector = False
         if percepts.is_occupied:
             new_lights = self.smoothed_light < config.light_threshold_lux
-            if percepts.activity in ["Lecture", "Lab"]:
+            if percepts.projector_override is not None:
+                new_projector = bool(percepts.projector_override)
+            elif percepts.activity in ["Lecture", "Lab"]:
                 new_projector = True
             else:
                 new_projector = False

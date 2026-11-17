@@ -93,7 +93,45 @@ def test_api():
     assert r8.json()["config"]["update_interval_sec"] == 3.0
     assert r8.json()["config"]["noise_enabled"] is True
 
-    print("\n>>> ALL 9 BACKEND API TESTS PASSED SUCCESSFULLY! <<<")
+    # 10. Test Lecture with Projector Turned ON vs Turned OFF
+    # 10a. Lecture with Projector forced ON
+    r_proj_on = client.post("/api/simulation/manual", json={
+        "students_count": 30,
+        "temperature": 24.0,
+        "light_intensity": 400.0,
+        "activity": "Lecture",
+        "door_status": "Closed",
+        "window_status": "Closed",
+        "simulated_time": "09:30 AM",
+        "projector_override": True
+    })
+    assert r_proj_on.status_code == 200
+    assert r_proj_on.json()["current_devices"]["projector"] is True, "Projector should be ON when override is True"
+
+    # 10b. Lecture with Projector forced OFF (Whiteboard mode)
+    r_proj_off = client.post("/api/simulation/manual", json={
+        "students_count": 30,
+        "temperature": 24.0,
+        "light_intensity": 400.0,
+        "activity": "Lecture",
+        "door_status": "Closed",
+        "window_status": "Closed",
+        "simulated_time": "09:30 AM",
+        "projector_override": False
+    })
+    assert r_proj_off.status_code == 200
+    assert r_proj_off.json()["current_devices"]["projector"] is False, "Projector should be OFF when override is False during Lecture"
+
+    # 10c. Direct projector override endpoint
+    r_toggle_on = client.post("/api/simulation/projector/override", json={"override": True})
+    assert r_toggle_on.status_code == 200
+    assert r_toggle_on.json()["current_devices"]["projector"] is True
+
+    r_toggle_off = client.post("/api/simulation/projector/override", json={"override": False})
+    assert r_toggle_off.status_code == 200
+    assert r_toggle_off.json()["current_devices"]["projector"] is False
+
+    print("\n>>> ALL 10 BACKEND API TESTS (INCLUDING PROJECTOR CONTROLS) PASSED! <<<")
 
 
 if __name__ == "__main__":

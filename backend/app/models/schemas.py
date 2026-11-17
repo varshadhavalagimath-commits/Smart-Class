@@ -145,6 +145,7 @@ class ClassroomPercepts(BaseModel):
     teacher_target_fan: Optional[int] = None   # e.g. 1
     fan_availability: Dict[int, bool] = Field(default_factory=default_fan_availability)
     fan_manual_overrides: Dict[int, Optional[bool]] = Field(default_factory=default_fan_overrides)
+    projector_override: Optional[bool] = None  # True=Force ON, False=Force OFF, None=Auto
 
     def model_post_init(self, __context: Any) -> None:
         total_students_in_zones = sum(z.students_count for z in self.zones.values())
@@ -171,6 +172,11 @@ class ManualInputRequest(BaseModel):
     teacher_target_fan: Optional[int] = None
     fan_availability: Optional[Dict[int, bool]] = None
     fan_manual_overrides: Optional[Dict[int, Optional[bool]]] = None
+    projector_override: Optional[bool] = None  # True=Force ON, False=Force OFF, None=Auto
+
+
+class ProjectorOverrideRequest(BaseModel):
+    override: Optional[bool] = None  # True=Force ON, False=Force OFF, None=Reset to Auto
 
 
 class FanOverrideRequest(BaseModel):

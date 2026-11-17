@@ -56,7 +56,9 @@ class UtilityBasedAgent(BaseAgent):
             effective_lux = percepts.light_intensity
             if effective_lux < config.light_threshold_lux:
                 new_lights = True
-            if percepts.activity in ["Lecture", "Lab"]:
+            if percepts.projector_override is not None:
+                new_projector = bool(percepts.projector_override)
+            elif percepts.activity in ["Lecture", "Lab"]:
                 new_projector = True
 
         # ==================== DYNAMIC ZONE UTILITY OPTIMIZATION ====================

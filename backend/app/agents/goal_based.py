@@ -49,7 +49,10 @@ class GoalBasedAgent(BaseAgent):
 
         # Lights & Projector
         new_lights = is_occupied_room and (percepts.light_intensity < config.light_threshold_lux)
-        new_projector = is_occupied_room and (percepts.activity in ["Lecture", "Lab"])
+        if percepts.projector_override is not None:
+            new_projector = is_occupied_room and bool(percepts.projector_override)
+        else:
+            new_projector = is_occupied_room and (percepts.activity in ["Lecture", "Lab"])
 
         is_hot = percepts.temperature >= config.fan_activation_temp or percepts.temperature > config.temp_comfort_max
 

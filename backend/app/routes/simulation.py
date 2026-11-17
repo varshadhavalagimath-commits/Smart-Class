@@ -4,6 +4,7 @@ from app.models.schemas import (
     SimulationState,
     ManualInputRequest,
     SimulationConfig,
+    ProjectorOverrideRequest,
     FanOverrideRequest,
     FanAvailabilityRequest,
     ZonePreferenceRequest
@@ -45,6 +46,14 @@ def step_simulation():
 def manual_simulation_override(req: ManualInputRequest):
     try:
         return sim_manager.apply_manual_input(req)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/projector/override", response_model=SimulationState)
+def set_projector_manual_override(req: ProjectorOverrideRequest):
+    try:
+        return sim_manager.set_projector_override(req.override)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 

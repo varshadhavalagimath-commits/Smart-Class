@@ -59,6 +59,15 @@ export const api = {
     return handleResponse(res);
   },
 
+  async setProjectorOverride(override) {
+    const res = await fetch(`${BASE_URL}/simulation/projector/override`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ override }),
+    });
+    return handleResponse(res);
+  },
+
   async setFanOverride(fanId, override) {
     const res = await fetch(`${BASE_URL}/simulation/fan/override`, {
       method: 'POST',

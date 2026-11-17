@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import ClassroomVisualizer from '../components/ClassroomVisualizer';
 
-export default function DashboardPage({ state, onSelectAgent }) {
+export default function DashboardPage({ state, onSelectAgent, onStateUpdate }) {
   const percepts = state?.current_percepts;
   const devices = state?.current_devices;
   const metrics = state?.metrics;
@@ -211,6 +211,7 @@ export default function DashboardPage({ state, onSelectAgent }) {
             devices={devices}
             activeAgent={state?.active_agent}
             lastDecision={decision}
+            onStateUpdate={onStateUpdate}
           />
         </div>
 

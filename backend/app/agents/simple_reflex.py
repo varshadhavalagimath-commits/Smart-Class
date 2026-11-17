@@ -54,7 +54,15 @@ class SimpleReflexAgent(BaseAgent):
                 new_lights = False
                 rules_triggered.append(f"[Rule R-Light-OK] Lux ({percepts.light_intensity:.0f}) >= {config.light_threshold_lux:.0f} -> Lights=OFF")
 
-            if percepts.activity in ["Lecture", "Lab"]:
+            # Projector rule with manual ON/OFF override support for Lecture
+            if percepts.projector_override is not None:
+                if percepts.projector_override is True:
+                    new_projector = True
+                    rules_triggered.append(f"[Rule R-Projector-Override] Manual/Lecture Setting -> Projector=ON (250W)")
+                else:
+                    new_projector = False
+                    rules_triggered.append(f"[Rule R-Projector-Override] Manual/Lecture Setting -> Projector=OFF (Whiteboard Only, 0W)")
+            elif percepts.activity in ["Lecture", "Lab"]:
                 new_projector = True
                 rules_triggered.append(f"[Rule R-Media] Activity ({percepts.activity.value}) -> Projector=ON")
             else:

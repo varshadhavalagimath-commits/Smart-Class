@@ -135,6 +135,7 @@ class ClassroomEnvironment:
         # Individual Fan settings (Persists across schedule ticks unless reset)
         self.fan_availability: Dict[int, bool] = default_fan_availability()
         self.fan_manual_overrides: Dict[int, Optional[bool]] = default_fan_overrides()
+        self.projector_override: Optional[bool] = None
 
         # Ground truth state
         self.ground_truth = self._get_schedule_state(0)
@@ -169,7 +170,8 @@ class ClassroomEnvironment:
             teacher_preference=step.get("teacher_preference", "no_preference"),
             teacher_target_fan=step.get("teacher_target_fan"),
             fan_availability=dict(self.fan_availability),
-            fan_manual_overrides=dict(self.fan_manual_overrides)
+            fan_manual_overrides=dict(self.fan_manual_overrides),
+            projector_override=self.projector_override
         )
 
     def current_phase_description(self) -> str:
@@ -196,7 +198,8 @@ class ClassroomEnvironment:
         teacher_preference: Optional[str] = "no_preference",
         teacher_target_fan: Optional[int] = None,
         fan_availability: Optional[Dict[int, bool]] = None,
-        fan_manual_overrides: Optional[Dict[int, Optional[bool]]] = None
+        fan_manual_overrides: Optional[Dict[int, Optional[bool]]] = None,
+        projector_override: Optional[bool] = None
     ) -> Tuple[ClassroomPercepts, ClassroomPercepts]:
         """
         Manually sets classroom environment parameters with full zone & fan control.
@@ -211,6 +214,8 @@ class ClassroomEnvironment:
         if fan_manual_overrides:
             for fid, ovr in fan_manual_overrides.items():
                 self.fan_manual_overrides[int(fid)] = ovr
+
+        self.projector_override = projector_override
 
         zones_data = default_zones()
 
@@ -272,10 +277,16 @@ class ClassroomEnvironment:
             teacher_preference=teacher_preference or "no_preference",
             teacher_target_fan=teacher_target_fan,
             fan_availability=dict(self.fan_availability),
-            fan_manual_overrides=dict(self.fan_manual_overrides)
+            fan_manual_overrides=dict(self.fan_manual_overrides),
+            projector_override=self.projector_override
         )
         self.current_perceived = self.read_sensors()
         return self.current_perceived, self.ground_truth
+
+    def set_projector_override(self, override: Optional[bool]) -> None:
+        self.projector_override = override
+        self.ground_truth.projector_override = override
+        self.current_perceived.projector_override = override
 
     def set_fan_override(self, fan_id: int, override: Optional[bool]) -> None:
         self.fan_manual_overrides[fan_id] = override
@@ -313,6 +324,7 @@ class ClassroomEnvironment:
         self.schedule_index = 0
         self.fan_availability = default_fan_availability()
         self.fan_manual_overrides = default_fan_overrides()
+        self.projector_override = None
         self.ground_truth = self._get_schedule_state(0)
         self.current_perceived = self.read_sensors()
         return self.current_perceived, self.ground_truth

@@ -17,7 +17,8 @@ import {
   AlertTriangle,
   Settings,
   Flame,
-  UserCheck
+  UserCheck,
+  Video
 } from 'lucide-react';
 import { api } from '../services/api';
 
@@ -57,6 +58,7 @@ export default function ManualControlPanel({
   const [doorStatus, setDoorStatus] = useState('Closed');
   const [windowStatus, setWindowStatus] = useState('Closed');
   const [simulatedTime, setSimulatedTime] = useState('09:00 AM');
+  const [projectorOverride, setProjectorOverride] = useState('auto'); // 'auto' | 'on' | 'off'
 
   // Zone Occupancies
   const [zoneA, setZoneA] = useState(15);
@@ -105,6 +107,14 @@ export default function ManualControlPanel({
       setTeacherPref(currentPercepts.teacher_preference ?? 'no_preference');
       setTeacherTargetFan(currentPercepts.teacher_target_fan ? String(currentPercepts.teacher_target_fan) : 'none');
 
+      if (currentPercepts.projector_override === true) {
+        setProjectorOverride('on');
+      } else if (currentPercepts.projector_override === false) {
+        setProjectorOverride('off');
+      } else {
+        setProjectorOverride('auto');
+      }
+
       setHasInitialized(true);
     }
   }, [currentPercepts, hasInitialized]);
@@ -138,6 +148,14 @@ export default function ManualControlPanel({
       setTeacherZone(currentPercepts.teacher_zone ?? 'Zone A');
       setTeacherPref(currentPercepts.teacher_preference ?? 'no_preference');
       setTeacherTargetFan(currentPercepts.teacher_target_fan ? String(currentPercepts.teacher_target_fan) : 'none');
+
+      if (currentPercepts.projector_override === true) {
+        setProjectorOverride('on');
+      } else if (currentPercepts.projector_override === false) {
+        setProjectorOverride('off');
+      } else {
+        setProjectorOverride('auto');
+      }
 
       setSuccessMessage('Synced manual inputs with live classroom state.');
       setTimeout(() => setSuccessMessage(''), 3000);
@@ -195,6 +213,7 @@ export default function ManualControlPanel({
       teacher_present_zone: teacherZone,
       teacher_preference: teacherPref,
       teacher_target_fan: teacherTargetFan !== 'none' ? parseInt(teacherTargetFan, 10) : null,
+      projector_override: projectorOverride === 'on' ? true : projectorOverride === 'off' ? false : null,
     };
 
     try {
@@ -206,6 +225,25 @@ export default function ManualControlPanel({
       setTimeout(() => setSuccessMessage(''), 4500);
     } catch (err) {
       setValidationError(err.message || 'Failed to apply manual changes');
+    }
+  };
+
+  // Direct Projector Control Handler
+  const handleSetProjectorDirect = async (overrideVal) => {
+    setFanLoading(true);
+    try {
+      const newState = await api.setProjectorOverride(overrideVal);
+      if (onStateUpdate && newState) {
+        onStateUpdate(newState);
+      }
+      setProjectorOverride(overrideVal === true ? 'on' : overrideVal === false ? 'off' : 'auto');
+      const label = overrideVal === true ? 'Turn ON (250W)' : overrideVal === false ? 'Turn OFF (0W)' : 'Auto Mode';
+      setSuccessMessage(`Projector set to: ${label}`);
+      setTimeout(() => setSuccessMessage(''), 3000);
+    } catch (err) {
+      setValidationError(`Failed to update Projector: ${err.message}`);
+    } finally {
+      setFanLoading(false);
     }
   };
 
@@ -315,12 +353,29 @@ export default function ManualControlPanel({
       tZ = 'Zone A';
       tP = 'off'; // Teacher requests fan OFF -> Teacher priority rule!
       time = '11:00 AM';
+    } else if (scenarioType === 'lecture_projector_on') {
+      // Lecture with Projector ON (Media Mode)
+      t = 24.0;
+      act = 'Lecture';
+      za = 15; zb = 15; zc = 0; zd = 0;
+      tZ = 'Zone A';
+      time = '09:30 AM';
+      projOvr = true;
+    } else if (scenarioType === 'lecture_projector_off') {
+      // Lecture with Projector OFF (Whiteboard Mode - saves 250W)
+      t = 24.0;
+      act = 'Lecture';
+      za = 15; zb = 15; zc = 0; zd = 0;
+      tZ = 'Zone A';
+      time = '09:30 AM';
+      projOvr = false;
     }
 
     setTemperature(t);
     setLightIntensity(l);
     setActivity(act);
     setSimulatedTime(time);
+    setProjectorOverride(projOvr === true ? 'on' : projOvr === false ? 'off' : 'auto');
     setZoneA(za); setZoneB(zb); setZoneC(zc); setZoneD(zd);
     setZoneAPref(zaP); setZoneBPref(zbP); setZoneCPref(zcP); setZoneDPref(zdP);
     setTeacherZone(tZ); setTeacherPref(tP); setTeacherTargetFan(tF ? String(tF) : 'none');
@@ -340,6 +395,7 @@ export default function ManualControlPanel({
         teacher_present_zone: tZ,
         teacher_preference: tP,
         teacher_target_fan: tF,
+        projector_override: projOvr,
       });
       if (onStateUpdate && newState) {
         onStateUpdate(newState);
@@ -470,6 +526,57 @@ export default function ManualControlPanel({
         {/* TAB 1: 4 ZONES & OCCUPANCY */}
         {activeTab === 'zones' && (
           <div>
+            {/* Quick Projector Status & Toggle */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginBottom: '0.75rem',
+              padding: '0.5rem 0.75rem',
+              backgroundColor: currentDevices?.projector ? '#eff6ff' : '#f8fafc',
+              border: currentDevices?.projector ? '1px solid #bfdbfe' : '1px solid var(--border-color)',
+              borderRadius: '8px'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <Video size={16} color={currentDevices?.projector ? '#2563eb' : '#64748b'} />
+                <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--primary-navy)' }}>
+                  Instructional Projector: <span style={{ color: currentDevices?.projector ? '#059669' : '#64748b' }}>{currentDevices?.projector ? 'ON (250 W)' : 'OFF (Whiteboard 0 W)'}</span>
+                </span>
+              </div>
+              <div style={{ display: 'flex', gap: '0.3rem' }}>
+                <button
+                  type="button"
+                  className={`btn btn-sm ${projectorOverride === 'on' ? 'btn-primary' : 'btn-outline'}`}
+                  style={{ fontSize: '0.68rem', padding: '0.15rem 0.45rem' }}
+                  onClick={() => handleSetProjectorDirect(true)}
+                  disabled={fanLoading}
+                  title="Force projector ON during lecture"
+                >
+                  Turn ON
+                </button>
+                <button
+                  type="button"
+                  className={`btn btn-sm ${projectorOverride === 'off' ? 'btn-primary' : 'btn-outline'}`}
+                  style={{ fontSize: '0.68rem', padding: '0.15rem 0.45rem' }}
+                  onClick={() => handleSetProjectorDirect(false)}
+                  disabled={fanLoading}
+                  title="Turn projector OFF (Whiteboard only mode)"
+                >
+                  Turn OFF
+                </button>
+                <button
+                  type="button"
+                  className={`btn btn-sm ${projectorOverride === 'auto' ? 'btn-primary' : 'btn-outline'}`}
+                  style={{ fontSize: '0.68rem', padding: '0.15rem 0.45rem' }}
+                  onClick={() => handleSetProjectorDirect(null)}
+                  disabled={fanLoading}
+                  title="Automatic agent management"
+                >
+                  Auto
+                </button>
+              </div>
+            </div>
+
             <div style={{
               display: 'flex',
               alignItems: 'center',
@@ -898,6 +1005,23 @@ export default function ManualControlPanel({
               </select>
             </div>
 
+            {/* Projector Mode in Lecture / Activity */}
+            <div className="form-group">
+              <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                <Video size={14} color="#2563eb" />
+                <span>Projector in {activity}</span>
+              </label>
+              <select
+                className="form-select"
+                value={projectorOverride}
+                onChange={(e) => setProjectorOverride(e.target.value)}
+              >
+                <option value="auto">Auto (Agent Decision)</option>
+                <option value="on">Turn ON (Lecture Media - 250W)</option>
+                <option value="off">Turn OFF (Whiteboard Only - 0W)</option>
+              </select>
+            </div>
+
             {/* Door */}
             <div className="form-group">
               <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
@@ -1059,6 +1183,34 @@ export default function ManualControlPanel({
                 <strong style={{ color: '#b91c1c', fontSize: '0.82rem' }}>Scenario 7: Conflict Resolution (Teacher Priority)</strong>
                 <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
                   Students request ON, Teacher requests OFF in same zone. Expect: Teacher priority honored.
+                </div>
+              </div>
+            </button>
+
+            <button
+              type="button"
+              className="btn btn-outline"
+              onClick={() => applyScenario('lecture_projector_on')}
+              style={{ justifyContent: 'flex-start', textAlign: 'left', padding: '0.55rem 0.75rem', borderColor: '#93c5fd', backgroundColor: '#f0f9ff' }}
+            >
+              <div>
+                <strong style={{ color: '#2563eb', fontSize: '0.82rem' }}>📺 Lecture: Turn Projector ON (250W Media Presentation)</strong>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                  Active Lecture with slide projection enabled. Expect: Projector ON (250W).
+                </div>
+              </div>
+            </button>
+
+            <button
+              type="button"
+              className="btn btn-outline"
+              onClick={() => applyScenario('lecture_projector_off')}
+              style={{ justifyContent: 'flex-start', textAlign: 'left', padding: '0.55rem 0.75rem', borderColor: '#cbd5e1' }}
+            >
+              <div>
+                <strong style={{ color: '#475569', fontSize: '0.82rem' }}>📺 Lecture: Turn Projector OFF (Whiteboard Mode - 0W Saved)</strong>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                  Active Lecture using physical whiteboard only. Expect: Projector OFF (0W), saves 250W power draw.
                 </div>
               </div>
             </button>

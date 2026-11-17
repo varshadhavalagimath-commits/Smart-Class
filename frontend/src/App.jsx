@@ -170,6 +170,7 @@ export default function App() {
                 <DashboardPage
                   state={simulationState}
                   onSelectAgent={handleSelectAgent}
+                  onStateUpdate={(newState) => setSimulationState(newState)}
                 />
               }
             />

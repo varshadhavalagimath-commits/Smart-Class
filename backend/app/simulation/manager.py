@@ -146,7 +146,8 @@ class SimulationManager:
             teacher_preference=req.teacher_preference,
             teacher_target_fan=req.teacher_target_fan,
             fan_availability=req.fan_availability,
-            fan_manual_overrides=req.fan_manual_overrides
+            fan_manual_overrides=req.fan_manual_overrides,
+            projector_override=req.projector_override
         )
 
         self.step_count += 1
@@ -194,6 +195,44 @@ class SimulationManager:
             mode="manual"
         )
 
+        return self.get_state()
+
+    def set_projector_override(self, override: Optional[bool]) -> SimulationState:
+        """
+        Manually overrides the instructional projector to ON (True), OFF (False), or Reset to Auto (None).
+        """
+        self.environment.set_projector_override(override)
+        perceived = self.environment.read_sensors()
+        agent = self.agents[self.config.active_agent]
+        decision = agent.decide(perceived, self.current_devices, self.config)
+        self.current_devices = decision.selected_state
+        self.last_decision = decision
+
+        state_str = "Force ON (250W)" if override is True else ("Force OFF (Whiteboard 0W)" if override is False else "Reset to Auto")
+        insert_decision(
+            simulated_time=self.environment.ground_truth.simulated_time,
+            students_count=perceived.students_count,
+            temperature=perceived.temperature,
+            light_intensity=perceived.light_intensity,
+            activity=perceived.activity.value,
+            door_status=perceived.door_status.value,
+            window_status=perceived.window_status.value,
+            agent_type=self.config.active_agent.value,
+            lights=self.current_devices.lights,
+            fans=self.current_devices.fans,
+            projector=self.current_devices.projector,
+            power_w=decision.power_w,
+            baseline_power_w=self.energy_engine.metrics.baseline_power_w,
+            comfort_score=decision.comfort_score,
+            energy_saved_step_wh=0.0,
+            reason=f"[Manual Projector Override] Projector set to {state_str}.",
+            active_fan_count=self.current_devices.active_fan_count,
+            fan_power_w=self.current_devices.fan_power_w,
+            fan_states=self.current_devices.fan_states,
+            zone_occupancy={z: info.students_count for z, info in perceived.zones.items()},
+            zone_preferences={z: f"S:{info.student_preference},T:{info.teacher_preference}" for z, info in perceived.zones.items()},
+            mode="manual"
+        )
         return self.get_state()
 
     def set_fan_override(self, fan_id: int, override: Optional[bool]) -> SimulationState:

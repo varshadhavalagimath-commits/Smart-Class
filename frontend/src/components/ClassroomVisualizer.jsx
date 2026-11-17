@@ -15,8 +15,9 @@ import {
   Lock,
   CheckCircle2
 } from 'lucide-react';
+import { api } from '../services/api';
 
-export default function ClassroomVisualizer({ percepts, devices, activeAgent, lastDecision }) {
+export default function ClassroomVisualizer({ percepts, devices, activeAgent, lastDecision, onStateUpdate }) {
   const isOccupied = percepts?.is_occupied ?? (percepts?.students_count > 0);
   const lightsOn = devices?.lights ?? false;
   const projectorOn = devices?.projector ?? false;
@@ -26,6 +27,18 @@ export default function ClassroomVisualizer({ percepts, devices, activeAgent, la
   const isDoorOpen = percepts?.door_status === 'Open';
   const isWindowOpen = percepts?.window_status === 'Open';
   const activity = percepts?.activity || 'Lecture';
+
+  const handleToggleProjector = async (e) => {
+    e?.stopPropagation();
+    try {
+      const newState = await api.setProjectorOverride(!projectorOn);
+      if (onStateUpdate && newState) {
+        onStateUpdate(newState);
+      }
+    } catch (err) {
+      console.error('Failed to toggle projector:', err);
+    }
+  };
 
   const fanStates = devices?.fan_states || {};
   const fanAvail = percepts?.fan_availability || devices?.fan_availability || {};
@@ -214,32 +227,67 @@ export default function ClassroomVisualizer({ percepts, devices, activeAgent, la
 
           {/* Center: Smart Whiteboard & Projector */}
           <div style={{
-            width: '320px',
-            height: '75px',
+            width: '340px',
+            minHeight: '75px',
             backgroundColor: projectorOn ? '#0f172a' : '#f8fafc',
-            border: '4px solid #334155',
+            border: projectorOn ? '3px solid #3b82f6' : '3px solid #64748b',
             borderRadius: '6px',
             boxShadow: projectorOn ? '0 0 25px rgba(59, 130, 246, 0.5)' : 'none',
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'center',
+            padding: '0.35rem 0.5rem',
             color: projectorOn ? '#38bdf8' : '#64748b',
             transition: 'all 0.3s ease',
             position: 'relative'
           }}>
             {projectorOn ? (
-              <div style={{ textAlign: 'center', padding: '0.2rem' }}>
-                <div style={{ fontSize: '0.68rem', fontWeight: 700, color: '#93c5fd' }}>
-                  📺 {activity === 'Lab' ? 'Lab Exercise: Smart Energy Agent' : 'Lecture: Zone-Based Dynamic Fan Agent'}
+              <div style={{ textAlign: 'center', padding: '0.1rem', width: '100%' }}>
+                <div style={{ fontSize: '0.68rem', fontWeight: 700, color: '#93c5fd', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.3rem' }}>
+                  <Video size={13} color="#60a5fa" />
+                  <span>{activity === 'Lab' ? 'Lab Exercise: Smart Energy Agent' : 'Lecture: Zone-Based Dynamic Fan Agent'}</span>
                 </div>
-                <div style={{ fontSize: '0.58rem', color: '#94a3b8' }}>
-                  Projector ON (250 W) — High Utility Media
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', marginTop: '0.25rem' }}>
+                  <span style={{ fontSize: '0.6rem', color: '#94a3b8' }}>
+                    Projector ON (250 W)
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleToggleProjector}
+                    className="btn btn-outline btn-sm"
+                    style={{
+                      fontSize: '0.6rem',
+                      padding: '0.1rem 0.4rem',
+                      backgroundColor: 'rgba(239, 68, 68, 0.2)',
+                      borderColor: '#ef4444',
+                      color: '#fca5a5'
+                    }}
+                    title="Click to Turn Projector OFF during this Lecture"
+                  >
+                    Turn OFF (Whiteboard)
+                  </button>
                 </div>
               </div>
             ) : (
-              <div style={{ textAlign: 'center' }}>
-                <span style={{ fontSize: '0.7rem', fontWeight: 600 }}>Whiteboard (Projector Standby - 0W)</span>
+              <div style={{ textAlign: 'center', width: '100%', padding: '0.1rem' }}>
+                <div style={{ fontSize: '0.68rem', fontWeight: 600, color: '#475569', marginBottom: '0.2rem' }}>
+                  Whiteboard Only (Projector Standby - 0W)
+                </div>
+                <button
+                  type="button"
+                  onClick={handleToggleProjector}
+                  className="btn btn-primary btn-sm"
+                  style={{
+                    fontSize: '0.62rem',
+                    padding: '0.12rem 0.5rem',
+                    backgroundColor: '#2563eb',
+                    borderColor: '#2563eb'
+                  }}
+                  title="Click to Turn Projector ON for this Lecture"
+                >
+                  📺 Turn ON Projector (250W)
+                </button>
               </div>
             )}
           </div>
