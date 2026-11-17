@@ -35,6 +35,8 @@ export default function DashboardPage({ state, onSelectAgent }) {
   const lightsOn = devices?.lights ?? false;
   const fansOn = devices?.fans ?? false;
   const projectorOn = devices?.projector ?? false;
+  const activeFanCount = devices?.active_fan_count ?? (fansOn ? 1 : 0);
+  const fanPowerW = devices?.fan_power_w ?? (fansOn ? 60 : 0);
 
   return (
     <div className="page-body">
@@ -261,12 +263,12 @@ export default function DashboardPage({ state, onSelectAgent }) {
                     <Wind size={20} color={fansOn ? '#0284c7' : '#64748b'} className={fansOn ? 'fan-spinning' : ''} />
                   </div>
                   <div>
-                    <div className="device-name">Ceiling Ventilation Fans</div>
-                    <div className="device-power">300 W (Evaporative -3.5°C)</div>
+                    <div className="device-name">Dynamic Zone Ventilation Fans</div>
+                    <div className="device-power">{activeFanCount}/8 Active ({fanPowerW}W • 60W/unit)</div>
                   </div>
                 </div>
                 <span className={`badge ${fansOn ? 'badge-green' : 'badge-gray'}`}>
-                  {fansOn ? 'SPINNING (300W)' : 'OFF (0W)'}
+                  {fansOn ? `${activeFanCount} ACTIVE (${fanPowerW}W)` : 'OFF (0W)'}
                 </span>
               </div>
 

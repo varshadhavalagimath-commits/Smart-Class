@@ -187,6 +187,7 @@ export default function App() {
                   onSelectAgent={handleSelectAgent}
                   onApplyManual={handleApplyManual}
                   onResetDefault={handleReset}
+                  onStateUpdate={(newState) => setSimulationState(newState)}
                   isLoading={isLoading}
                 />
               }

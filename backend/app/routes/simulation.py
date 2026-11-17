@@ -1,6 +1,13 @@
 from fastapi import APIRouter, HTTPException
 from typing import Dict, Any
-from app.models.schemas import SimulationState, ManualInputRequest, SimulationConfig
+from app.models.schemas import (
+    SimulationState,
+    ManualInputRequest,
+    SimulationConfig,
+    FanOverrideRequest,
+    FanAvailabilityRequest,
+    ZonePreferenceRequest
+)
 from app.simulation.manager import sim_manager
 
 router = APIRouter(prefix="/api/simulation", tags=["simulation"])
@@ -42,6 +49,40 @@ def manual_simulation_override(req: ManualInputRequest):
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@router.post("/fan/override", response_model=SimulationState)
+def set_fan_manual_override(req: FanOverrideRequest):
+    try:
+        return sim_manager.set_fan_override(req.fan_id, req.override)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/fan/availability", response_model=SimulationState)
+def set_fan_availability(req: FanAvailabilityRequest):
+    try:
+        return sim_manager.set_fan_availability(req.fan_id, req.is_available)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/fan/reset_overrides", response_model=SimulationState)
+def reset_all_fan_overrides():
+    return sim_manager.reset_all_fan_overrides()
+
+
+@router.post("/zone/preference", response_model=SimulationState)
+def set_zone_preference(req: ZonePreferenceRequest):
+    try:
+        return sim_manager.set_zone_preference(
+            zone_id=req.zone_id,
+            student_preference=req.student_preference,
+            teacher_preference=req.teacher_preference,
+            teacher_target_fan=req.teacher_target_fan
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @router.post("/config", response_model=SimulationState)
 def update_config(config_data: Dict[str, Any]):
     if "update_interval_sec" in config_data:
@@ -55,4 +96,9 @@ def update_config(config_data: Dict[str, Any]):
         sim_manager.config.temp_comfort_min = float(config_data["temp_comfort_min"])
     if "temp_comfort_max" in config_data:
         sim_manager.config.temp_comfort_max = float(config_data["temp_comfort_max"])
+    if "fan_activation_temp" in config_data:
+        sim_manager.config.fan_activation_temp = float(config_data["fan_activation_temp"])
+    if "cost_per_kwh" in config_data:
+        sim_manager.config.cost_per_kwh = float(config_data["cost_per_kwh"])
+        sim_manager.energy_engine.cost_per_kwh = sim_manager.config.cost_per_kwh
     return sim_manager.get_state()

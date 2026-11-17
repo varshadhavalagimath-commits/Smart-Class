@@ -59,6 +59,45 @@ export const api = {
     return handleResponse(res);
   },
 
+  async setFanOverride(fanId, override) {
+    const res = await fetch(`${BASE_URL}/simulation/fan/override`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fan_id: fanId, override }),
+    });
+    return handleResponse(res);
+  },
+
+  async setFanAvailability(fanId, isAvailable) {
+    const res = await fetch(`${BASE_URL}/simulation/fan/availability`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fan_id: fanId, is_available: isAvailable }),
+    });
+    return handleResponse(res);
+  },
+
+  async resetAllFanOverrides() {
+    const res = await fetch(`${BASE_URL}/simulation/fan/reset_overrides`, {
+      method: 'POST',
+    });
+    return handleResponse(res);
+  },
+
+  async setZonePreference(zoneId, studentPreference, teacherPreference, teacherTargetFan = null) {
+    const res = await fetch(`${BASE_URL}/simulation/zone/preference`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        zone_id: zoneId,
+        student_preference: studentPreference,
+        teacher_preference: teacherPreference,
+        teacher_target_fan: teacherTargetFan,
+      }),
+    });
+    return handleResponse(res);
+  },
+
   async getDecision(agentType, percepts) {
     const res = await fetch(`${BASE_URL}/agents/decision`, {
       method: 'POST',

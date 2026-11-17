@@ -22,19 +22,108 @@ class AgentType(str, Enum):
     UTILITY_BASED = "utility_based"
 
 
+class FanPreference(str, Enum):
+    NO_PREFERENCE = "no_preference"
+    ON = "on"
+    OFF = "off"
+
+
+# Static Zone Configuration: 8 Fans across 4 Zones
+ZONE_FAN_MAPPING = {
+    "Zone A": [1, 2],  # Front Left
+    "Zone B": [3, 4],  # Front Right
+    "Zone C": [5, 6],  # Back Left
+    "Zone D": [7, 8],  # Back Right
+}
+
+FAN_ZONE_MAPPING = {
+    1: "Zone A", 2: "Zone A",
+    3: "Zone B", 4: "Zone B",
+    5: "Zone C", 6: "Zone C",
+    7: "Zone D", 8: "Zone D"
+}
+
+FAN_POWER_PER_UNIT_W = 60.0
+LIGHTS_POWER_W = 400.0
+PROJECTOR_POWER_W = 250.0
+TOTAL_FAN_COUNT = 8
+MAX_FAN_POWER_W = TOTAL_FAN_COUNT * FAN_POWER_PER_UNIT_W  # 480 W
+MAX_TOTAL_POWER_W = LIGHTS_POWER_W + PROJECTOR_POWER_W + MAX_FAN_POWER_W  # 1130 W
+
+
+class FanInfo(BaseModel):
+    fan_id: int = Field(..., ge=1, le=8)
+    name: str
+    zone: str
+    is_on: bool = False
+    is_available: bool = True
+    manual_override: Optional[bool] = None  # None = auto, True = force ON, False = force OFF
+    power_w: float = FAN_POWER_PER_UNIT_W
+
+
+class ZoneInfo(BaseModel):
+    zone_id: str  # "Zone A", "Zone B", "Zone C", "Zone D"
+    name: str     # "Front Left", "Front Right", "Back Left", "Back Right"
+    students_count: int = 0
+    teacher_present: bool = False
+    student_preference: str = "no_preference"  # "no_preference", "on", "off"
+    teacher_preference: str = "no_preference"  # "no_preference", "on", "off"
+    fans: List[int] = Field(default_factory=list)
+    active_fans: List[int] = Field(default_factory=list)
+
+    @property
+    def is_occupied(self) -> bool:
+        return self.students_count > 0 or self.teacher_present
+
+
+def default_zones() -> Dict[str, ZoneInfo]:
+    return {
+        "Zone A": ZoneInfo(zone_id="Zone A", name="Front Left", students_count=0, teacher_present=False, fans=[1, 2]),
+        "Zone B": ZoneInfo(zone_id="Zone B", name="Front Right", students_count=0, teacher_present=False, fans=[3, 4]),
+        "Zone C": ZoneInfo(zone_id="Zone C", name="Back Left", students_count=0, teacher_present=False, fans=[5, 6]),
+        "Zone D": ZoneInfo(zone_id="Zone D", name="Back Right", students_count=0, teacher_present=False, fans=[7, 8]),
+    }
+
+
+def default_fan_states() -> Dict[int, bool]:
+    return {i: False for i in range(1, 9)}
+
+
+def default_fan_availability() -> Dict[int, bool]:
+    return {i: True for i in range(1, 9)}
+
+
+def default_fan_overrides() -> Dict[int, Optional[bool]]:
+    return {i: None for i in range(1, 9)}
+
+
 class DeviceState(BaseModel):
     lights: bool = False
-    fans: bool = False
+    fans: bool = False  # Backward-compatible summary: True if any fan is active
     projector: bool = False
+    fan_states: Dict[int, bool] = Field(default_factory=default_fan_states)
+    fan_availability: Dict[int, bool] = Field(default_factory=default_fan_availability)
+    fan_overrides: Dict[int, Optional[bool]] = Field(default_factory=default_fan_overrides)
+    active_fan_count: int = 0
+    fan_power_w: float = 0.0
 
-    def power_watts(self, lights_w: float = 400.0, fans_w: float = 300.0, projector_w: float = 250.0) -> float:
+    def model_post_init(self, __context: Any) -> None:
+        self.active_fan_count = sum(1 for state in self.fan_states.values() if state)
+        self.fans = self.active_fan_count > 0
+        self.fan_power_w = round(self.active_fan_count * FAN_POWER_PER_UNIT_W, 1)
+
+    def power_watts(
+        self,
+        lights_w: float = LIGHTS_POWER_W,
+        fans_unit_w: float = FAN_POWER_PER_UNIT_W,
+        projector_w: float = PROJECTOR_POWER_W
+    ) -> float:
         total = 0.0
         if self.lights:
             total += lights_w
-        if self.fans:
-            total += fans_w
         if self.projector:
             total += projector_w
+        total += self.active_fan_count * fans_unit_w
         return total
 
 
@@ -49,18 +138,56 @@ class ClassroomPercepts(BaseModel):
     simulated_time: str = "08:00 AM"
     noise_enabled: bool = False
 
+    # Dynamic Zone-Based Fan Control Percepts
+    zones: Dict[str, ZoneInfo] = Field(default_factory=default_zones)
+    teacher_zone: Optional[str] = "Zone A"
+    teacher_preference: str = "no_preference"  # "no_preference", "on", "off"
+    teacher_target_fan: Optional[int] = None   # e.g. 1
+    fan_availability: Dict[int, bool] = Field(default_factory=default_fan_availability)
+    fan_manual_overrides: Dict[int, Optional[bool]] = Field(default_factory=default_fan_overrides)
+
     def model_post_init(self, __context: Any) -> None:
-        self.is_occupied = self.students_count > 0
+        total_students_in_zones = sum(z.students_count for z in self.zones.values())
+        if total_students_in_zones > 0:
+            self.students_count = total_students_in_zones
+        has_teacher = any(z.teacher_present for z in self.zones.values()) or (self.teacher_zone is not None and self.teacher_zone != "None")
+        self.is_occupied = self.students_count > 0 or has_teacher
 
 
 class ManualInputRequest(BaseModel):
-    students_count: int = Field(..., ge=0, le=100, description="Students in classroom (0-100)")
+    students_count: Optional[int] = Field(default=None, ge=0, le=100)
     temperature: float = Field(..., ge=15.0, le=45.0, description="Temperature in °C (15-45)")
     light_intensity: float = Field(..., ge=0.0, le=1000.0, description="Ambient light intensity in lux (0-1000)")
     activity: ActivityType = ActivityType.LECTURE
     door_status: DoorWindowStatus = DoorWindowStatus.CLOSED
     window_status: DoorWindowStatus = DoorWindowStatus.CLOSED
     simulated_time: Optional[str] = None
+
+    # Zone-based inputs
+    zone_occupancy: Optional[Dict[str, int]] = None  # {"Zone A": 10, "Zone B": 15, "Zone C": 0, "Zone D": 0}
+    student_preferences: Optional[Dict[str, str]] = None  # {"Zone A": "on", "Zone B": "no_preference", ...}
+    teacher_present_zone: Optional[str] = None  # "Zone A", "Zone B", "Zone C", "Zone D", "None"
+    teacher_preference: Optional[str] = "no_preference"  # "no_preference", "on", "off"
+    teacher_target_fan: Optional[int] = None
+    fan_availability: Optional[Dict[int, bool]] = None
+    fan_manual_overrides: Optional[Dict[int, Optional[bool]]] = None
+
+
+class FanOverrideRequest(BaseModel):
+    fan_id: int = Field(..., ge=1, le=8)
+    override: Optional[bool] = None  # True=Force ON, False=Force OFF, None=Reset to Auto
+
+
+class FanAvailabilityRequest(BaseModel):
+    fan_id: int = Field(..., ge=1, le=8)
+    is_available: bool = True
+
+
+class ZonePreferenceRequest(BaseModel):
+    zone_id: str
+    student_preference: Optional[str] = None
+    teacher_preference: Optional[str] = None
+    teacher_target_fan: Optional[int] = None
 
 
 class GoalStatus(BaseModel):
@@ -98,6 +225,13 @@ class AgentDecision(BaseModel):
     goals_status: Optional[List[GoalStatus]] = None
     utility_breakdown: Optional[List[UtilityCombinationEvaluation]] = None
 
+    # Zone-based dynamic fan decision output
+    fan_states: Dict[int, bool] = Field(default_factory=default_fan_states)
+    active_fan_count: int = 0
+    fan_power_w: float = 0.0
+    zone_fan_allocations: Optional[Dict[str, List[int]]] = None
+    zone_reasons: Optional[Dict[str, str]] = None
+
 
 class AgentComparisonItem(BaseModel):
     agent_type: AgentType
@@ -110,6 +244,14 @@ class AgentComparisonItem(BaseModel):
     utility_score: float
     reason: str
     matched_detail: Optional[str] = None
+
+    # Dynamic zone-based fan comparison fields
+    fan_states: Dict[int, bool] = Field(default_factory=default_fan_states)
+    active_fan_count: int = 0
+    fan_power_w: float = 0.0
+    zone_coverage: Dict[str, str] = Field(default_factory=dict)
+    memory_info: Optional[Dict[str, Any]] = None
+    goal_status_list: Optional[List[str]] = None
 
 
 class AgentCompareResponse(BaseModel):
@@ -125,7 +267,10 @@ class SimulationConfig(BaseModel):
     light_threshold_lux: float = 300.0
     temp_comfort_min: float = 22.0
     temp_comfort_max: float = 26.0
+    fan_activation_temp: float = 28.0  # Normal automatic fan activation threshold
+    fan_power_w_per_unit: float = FAN_POWER_PER_UNIT_W
     sim_minutes_per_step: int = 15
+    cost_per_kwh: float = 0.15  # Electricity cost rate ($/kWh)
 
 
 class SimulationMetrics(BaseModel):
@@ -134,9 +279,12 @@ class SimulationMetrics(BaseModel):
     energy_saved_kwh: float = 0.0
     savings_percentage: float = 0.0
     current_power_w: float = 0.0
-    baseline_power_w: float = 950.0
+    baseline_power_w: float = MAX_TOTAL_POWER_W
     average_comfort: float = 100.0
     total_steps: int = 0
+    active_fan_count: int = 0
+    fan_power_w: float = 0.0
+    estimated_cost_saved: float = 0.0
     device_runtime_minutes: Dict[str, int] = Field(
         default_factory=lambda: {"lights": 0, "fans": 0, "projector": 0}
     )
@@ -174,6 +322,12 @@ class HistoryItem(BaseModel):
     comfort_score: float
     energy_saved_step_wh: float
     reason: str
+    active_fan_count: int = 0
+    fan_power_w: float = 0.0
+    fan_states: Dict[int, bool] = Field(default_factory=default_fan_states)
+    zone_occupancy: Optional[Dict[str, int]] = None
+    zone_preferences: Optional[Dict[str, str]] = None
+    mode: str = "automatic"
 
 
 class AnalyticsDataPoint(BaseModel):
@@ -187,6 +341,8 @@ class AnalyticsDataPoint(BaseModel):
     temperature: float
     lux: float
     students: int
+    active_fan_count: int = 0
+    fan_power_w: float = 0.0
 
 
 class AnalyticsResponse(BaseModel):
@@ -197,5 +353,9 @@ class AnalyticsResponse(BaseModel):
     current_power_w: float
     baseline_power_w: float
     average_comfort: float
+    active_fan_count: int = 0
+    fan_power_w: float = 0.0
+    estimated_cost_spent: float = 0.0
+    estimated_cost_saved: float = 0.0
     device_runtime_minutes: Dict[str, int]
     history_points: List[AnalyticsDataPoint]

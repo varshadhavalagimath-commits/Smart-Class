@@ -35,7 +35,11 @@ export default function AgentCard({ decision }) {
     matched_rule,
     internal_state,
     goals_status,
-    utility_breakdown
+    utility_breakdown,
+    active_fan_count = 0,
+    fan_power_w = 0,
+    zone_fan_allocations,
+    zone_reasons
   } = decision;
 
   return (
@@ -144,6 +148,49 @@ export default function AgentCard({ decision }) {
           {reason}
         </p>
       </div>
+
+      {/* Dynamic Zone Fan Breakdown */}
+      {zone_fan_allocations && (
+        <div style={{
+          marginBottom: '1rem',
+          padding: '0.75rem 0.9rem',
+          backgroundColor: '#f0fdf4',
+          borderRadius: '8px',
+          border: '1px solid #bbf7d0'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.45rem' }}>
+            <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#166534', textTransform: 'uppercase' }}>
+              💨 Zone-Based Fan Actuation ({active_fan_count}/8 Active • {fan_power_w} W):
+            </span>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.5rem' }}>
+            {Object.entries(zone_fan_allocations).map(([zId, activeFans]) => (
+              <div
+                key={zId}
+                style={{
+                  padding: '0.45rem 0.6rem',
+                  backgroundColor: '#ffffff',
+                  borderRadius: '6px',
+                  border: '1px solid #dcfce7',
+                  fontSize: '0.75rem'
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.2rem' }}>
+                  <strong style={{ color: 'var(--primary-navy)' }}>{zId}</strong>
+                  <span className={`badge ${activeFans && activeFans.length > 0 ? 'badge-green' : 'badge-gray'}`} style={{ fontSize: '0.65rem' }}>
+                    {activeFans && activeFans.length > 0 ? `${activeFans.length} ON (${activeFans.map(f => `F${f}`).join(', ')})` : 'Fans OFF'}
+                  </span>
+                </div>
+                {zone_reasons && zone_reasons[zId] && (
+                  <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', lineHeight: 1.3 }}>
+                    {zone_reasons[zId]}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Architecture Specific Technical View */}
       {/* 1. Simple Reflex Rules View */}

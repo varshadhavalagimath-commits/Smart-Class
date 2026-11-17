@@ -9,34 +9,51 @@ import {
   DoorClosed, 
   DoorOpen,
   Sparkles,
-  Layers
+  Layers,
+  GraduationCap,
+  AlertTriangle,
+  Lock,
+  CheckCircle2
 } from 'lucide-react';
 
 export default function ClassroomVisualizer({ percepts, devices, activeAgent, lastDecision }) {
-  const isOccupied = percepts?.students_count > 0;
+  const isOccupied = percepts?.is_occupied ?? (percepts?.students_count > 0);
   const lightsOn = devices?.lights ?? false;
-  const fansOn = devices?.fans ?? false;
   const projectorOn = devices?.projector ?? false;
-  const temp = percepts?.temperature ?? 24;
-  const lux = percepts?.light_intensity ?? 400;
-  const studentsCount = percepts?.students_count ?? 0;
+  const temp = percepts?.temperature ?? 24.0;
+  const lux = percepts?.light_intensity ?? 400.0;
+  const totalStudents = percepts?.students_count ?? 0;
   const isDoorOpen = percepts?.door_status === 'Open';
   const isWindowOpen = percepts?.window_status === 'Open';
-  const activity = percepts?.activity || 'No class';
+  const activity = percepts?.activity || 'Lecture';
 
-  // Compute visual ambient light intensity
-  // Effective lux increases when classroom lights are ON
+  const fanStates = devices?.fan_states || {};
+  const fanAvail = percepts?.fan_availability || devices?.fan_availability || {};
+  const fanOverrides = percepts?.fan_manual_overrides || devices?.fan_overrides || {};
+  const activeFanCount = devices?.active_fan_count ?? 0;
+  const fanPowerW = devices?.fan_power_w ?? (activeFanCount * 60.0);
+
+  const zones = percepts?.zones || {
+    "Zone A": { zone_id: "Zone A", name: "Front Left", students_count: 0, teacher_present: false, student_preference: "no_preference", teacher_preference: "no_preference" },
+    "Zone B": { zone_id: "Zone B", name: "Front Right", students_count: 0, teacher_present: false, student_preference: "no_preference", teacher_preference: "no_preference" },
+    "Zone C": { zone_id: "Zone C", name: "Back Left", students_count: 0, teacher_present: false, student_preference: "no_preference", teacher_preference: "no_preference" },
+    "Zone D": { zone_id: "Zone D", name: "Back Right", students_count: 0, teacher_present: false, student_preference: "no_preference", teacher_preference: "no_preference" },
+  };
+
   const effectiveLux = lux + (lightsOn ? 320 : 0);
-  const brightnessFilter = Math.min(1.15, Math.max(0.65, effectiveLux / 500));
+  const brightnessFilter = Math.min(1.15, Math.max(0.7, effectiveLux / 500));
 
-  // Determine number of student avatars to render (scaled up to 16 seats visual representation)
-  const totalDesks = 12;
-  const occupiedSeats = studentsCount === 0 ? 0 : Math.min(totalDesks, Math.max(1, Math.ceil((studentsCount / 50) * totalDesks)));
-
-  // Color temp styling
-  const isHot = temp > 26;
-  const isCold = temp < 22;
+  const isHot = temp > 26.0;
+  const isCold = temp < 22.0;
   const tempColor = isHot ? '#ef4444' : isCold ? '#3b82f6' : '#10b981';
+
+  // Zone configuration mapping
+  const zoneList = [
+    { id: "Zone A", label: "Zone A – Front Left", fans: [1, 2] },
+    { id: "Zone B", label: "Zone B – Front Right", fans: [3, 4] },
+    { id: "Zone C", label: "Zone C – Back Left", fans: [5, 6] },
+    { id: "Zone D", label: "Zone D – Back Right", fans: [7, 8] },
+  ];
 
   return (
     <div className="classroom-visualizer-card">
@@ -52,7 +69,7 @@ export default function ClassroomVisualizer({ percepts, devices, activeAgent, la
         gap: '0.75rem',
         borderBottom: '1px solid rgba(255,255,255,0.1)'
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
           <div style={{
             display: 'flex',
             alignItems: 'center',
@@ -63,7 +80,7 @@ export default function ClassroomVisualizer({ percepts, devices, activeAgent, la
             fontSize: '0.8rem',
             fontWeight: 600
           }}>
-            <Layers size={15} color="#38bdf8" />
+            <Layers size={14} color="#38bdf8" />
             <span>Agent: {lastDecision?.agent_name || activeAgent}</span>
           </div>
 
@@ -90,12 +107,12 @@ export default function ClassroomVisualizer({ percepts, devices, activeAgent, la
             gap: '0.35rem',
             fontSize: '0.8rem',
             color: '#f8fafc',
-            backgroundColor: 'rgba(0,0,0,0.3)',
+            backgroundColor: 'rgba(0,0,0,0.35)',
             padding: '0.25rem 0.6rem',
             borderRadius: '6px'
           }}>
             <Users size={14} color="#60a5fa" />
-            <span>{studentsCount} Students ({isOccupied ? 'Occupied' : 'Vacant'})</span>
+            <span>{totalStudents} Students ({isOccupied ? 'Occupied' : 'Vacant'})</span>
           </div>
 
           <div style={{
@@ -104,10 +121,10 @@ export default function ClassroomVisualizer({ percepts, devices, activeAgent, la
             gap: '0.35rem',
             fontSize: '0.8rem',
             color: tempColor,
-            backgroundColor: 'rgba(0,0,0,0.3)',
+            backgroundColor: 'rgba(0,0,0,0.35)',
             padding: '0.25rem 0.6rem',
             borderRadius: '6px',
-            fontWeight: 600
+            fontWeight: 700
           }}>
             <Thermometer size={14} color={tempColor} />
             <span>{temp.toFixed(1)}°C</span>
@@ -119,468 +136,375 @@ export default function ClassroomVisualizer({ percepts, devices, activeAgent, la
             gap: '0.35rem',
             fontSize: '0.8rem',
             color: '#fef08a',
-            backgroundColor: 'rgba(0,0,0,0.3)',
+            backgroundColor: 'rgba(0,0,0,0.35)',
             padding: '0.25rem 0.6rem',
             borderRadius: '6px'
           }}>
             <Sun size={14} color="#facc15" />
-            <span>{lux.toFixed(0)} Lux (Eff: {effectiveLux.toFixed(0)})</span>
+            <span>{lux.toFixed(0)} Lux</span>
           </div>
 
+          {/* Active Fans Chip */}
           <div style={{
             display: 'flex',
             alignItems: 'center',
             gap: '0.35rem',
             fontSize: '0.8rem',
-            color: '#cbd5e1',
-            backgroundColor: 'rgba(0,0,0,0.3)',
+            color: activeFanCount > 0 ? '#38bdf8' : '#94a3b8',
+            backgroundColor: 'rgba(0,0,0,0.35)',
             padding: '0.25rem 0.6rem',
-            borderRadius: '6px'
+            borderRadius: '6px',
+            fontWeight: 700
           }}>
-            {isDoorOpen ? <DoorOpen size={14} color="#f59e0b" /> : <DoorClosed size={14} color="#94a3b8" />}
-            <span>Door: {isDoorOpen ? 'Open' : 'Closed'}</span>
+            <Wind size={14} color={activeFanCount > 0 ? '#38bdf8' : '#94a3b8'} className={activeFanCount > 0 ? 'fan-spinning' : ''} />
+            <span>Fans: {activeFanCount}/8 Active ({fanPowerW}W)</span>
           </div>
         </div>
       </div>
 
-      {/* Interactive 2D Classroom Stage */}
+      {/* Main 2D Stage with 4 ZONES and 8 CEILING FANS */}
       <div style={{
         position: 'relative',
-        height: '460px',
+        minHeight: '520px',
         backgroundColor: '#cbd5e1',
         overflow: 'hidden',
         filter: `brightness(${brightnessFilter})`,
         transition: 'filter 0.5s ease',
-        backgroundImage: 'linear-gradient(to bottom, #94a3b8 0%, #cbd5e1 45%, #64748b 45%, #475569 100%)'
+        backgroundImage: 'linear-gradient(to bottom, #94a3b8 0%, #cbd5e1 35%, #475569 100%)',
+        padding: '12px'
       }}>
-        {/* Ambient Light Glow Overlay when Lights are ON */}
+        {/* Ambient Light Overlay when Lights ON */}
         {lightsOn && (
           <div style={{
             position: 'absolute',
             inset: 0,
-            background: 'radial-gradient(circle at 50% 20%, rgba(254, 240, 138, 0.35) 0%, rgba(253, 224, 71, 0.12) 50%, transparent 80%)',
+            background: 'radial-gradient(circle at 50% 25%, rgba(254, 240, 138, 0.3) 0%, rgba(253, 224, 71, 0.1) 60%, transparent 85%)',
             pointerEvents: 'none',
-            zIndex: 15,
-            transition: 'opacity 0.4s ease'
+            zIndex: 15
           }} />
         )}
 
-        {/* BACK WALL ELEMENTS */}
-        {/* Smart Board / Projector Screen */}
+        {/* ================= TOP WALL: BOARD, PROJECTOR, LIGHTS ================= */}
         <div style={{
-          position: 'absolute',
-          top: '30px',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          width: '320px',
-          height: '170px',
-          backgroundColor: projectorOn ? '#0f172a' : '#f8fafc',
-          border: '8px solid #334155',
-          borderRadius: '8px',
-          boxShadow: projectorOn 
-            ? '0 0 35px rgba(59, 130, 246, 0.45), 0 10px 25px rgba(0,0,0,0.3)' 
-            : '0 4px 12px rgba(0,0,0,0.1)',
           display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          color: projectorOn ? '#38bdf8' : '#64748b',
-          transition: 'all 0.4s ease',
-          zIndex: 5
-        }}>
-          {projectorOn ? (
-            <div style={{ textAlign: 'center', padding: '1rem' }}>
-              <div style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '0.4rem',
-                backgroundColor: 'rgba(37, 99, 235, 0.3)',
-                padding: '0.2rem 0.5rem',
-                borderRadius: '4px',
-                marginBottom: '0.5rem',
-                fontSize: '0.75rem',
-                color: '#93c5fd'
-              }}>
-                <Sparkles size={12} />
-                <span>ACTIVE PRESENTATION</span>
-              </div>
-              <h4 style={{ color: '#ffffff', fontSize: '1rem', fontWeight: 700, margin: 0 }}>
-                {activity === 'Lab' ? 'Lab Exercise: Sensor Automation' : 'Lecture: Rational Intelligent Agents'}
-              </h4>
-              <p style={{ color: '#94a3b8', fontSize: '0.72rem', marginTop: '0.35rem' }}>
-                Formula: U = 0.45·Comfort + 0.40·Energy + 0.15·Compliance
-              </p>
-            </div>
-          ) : (
-            <div style={{ textAlign: 'center' }}>
-              <Video size={32} color="#94a3b8" style={{ marginBottom: '0.4rem', opacity: 0.6 }} />
-              <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>Whiteboard (Projector Standby)</div>
-              <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>Powered OFF to eliminate standby power</div>
-            </div>
-          )}
-        </div>
-
-        {/* Projector Hanging from Ceiling with Beam */}
-        <div style={{
-          position: 'absolute',
-          top: '0',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          zIndex: 20
-        }}>
-          <div style={{ width: '4px', height: '14px', backgroundColor: '#475569' }} />
-          <div style={{
-            padding: '0.35rem 0.75rem',
-            backgroundColor: '#1e293b',
-            borderRadius: '6px',
-            border: projectorOn ? '2px solid #38bdf8' : '1px solid #475569',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.4rem',
-            color: projectorOn ? '#38bdf8' : '#94a3b8',
-            fontSize: '0.7rem',
-            fontWeight: 700,
-            boxShadow: projectorOn ? '0 0 15px rgba(56, 189, 248, 0.5)' : 'none'
-          }}>
-            <Video size={13} color={projectorOn ? '#38bdf8' : '#94a3b8'} />
-            <span>PROJECTOR: {projectorOn ? 'ON (250W)' : 'OFF (0W)'}</span>
-          </div>
-
-          {/* Light projection cone beam */}
-          {projectorOn && (
-            <div style={{
-              width: '0',
-              height: '0',
-              borderLeft: '40px solid transparent',
-              borderRight: '40px solid transparent',
-              borderTop: '50px solid rgba(56, 189, 248, 0.22)',
-              filter: 'blur(2px)',
-              pointerEvents: 'none'
-            }} />
-          )}
-        </div>
-
-        {/* CEILING LIGHT FIXTURES (Left & Right) */}
-        {/* Left Light */}
-        <div style={{
-          position: 'absolute',
-          top: '12px',
-          left: '18%',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          zIndex: 20
-        }}>
-          <div style={{ width: '3px', height: '10px', backgroundColor: '#64748b' }} />
-          <div style={{
-            width: '90px',
-            height: '22px',
-            borderRadius: '11px',
-            backgroundColor: lightsOn ? '#fef08a' : '#e2e8f0',
-            border: lightsOn ? '2px solid #eab308' : '1px solid #94a3b8',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '0.3rem',
-            boxShadow: lightsOn ? '0 0 25px rgba(250, 204, 21, 0.9), 0 0 45px rgba(250, 204, 21, 0.4)' : 'none',
-            transition: 'all 0.3s ease'
-          }}>
-            <Lightbulb size={12} color={lightsOn ? '#ca8a04' : '#64748b'} />
-            <span style={{ fontSize: '0.65rem', fontWeight: 700, color: lightsOn ? '#854d0e' : '#64748b' }}>
-              {lightsOn ? 'ON (400W)' : 'OFF'}
-            </span>
-          </div>
-        </div>
-
-        {/* Right Light */}
-        <div style={{
-          position: 'absolute',
-          top: '12px',
-          right: '18%',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          zIndex: 20
-        }}>
-          <div style={{ width: '3px', height: '10px', backgroundColor: '#64748b' }} />
-          <div style={{
-            width: '90px',
-            height: '22px',
-            borderRadius: '11px',
-            backgroundColor: lightsOn ? '#fef08a' : '#e2e8f0',
-            border: lightsOn ? '2px solid #eab308' : '1px solid #94a3b8',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '0.3rem',
-            boxShadow: lightsOn ? '0 0 25px rgba(250, 204, 21, 0.9), 0 0 45px rgba(250, 204, 21, 0.4)' : 'none',
-            transition: 'all 0.3s ease'
-          }}>
-            <Lightbulb size={12} color={lightsOn ? '#ca8a04' : '#64748b'} />
-            <span style={{ fontSize: '0.65rem', fontWeight: 700, color: lightsOn ? '#854d0e' : '#64748b' }}>
-              {lightsOn ? 'ON (400W)' : 'OFF'}
-            </span>
-          </div>
-        </div>
-
-        {/* CEILING FANS (Left & Right) */}
-        {/* Left Fan */}
-        <div style={{
-          position: 'absolute',
-          top: '48px',
-          left: '12%',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          zIndex: 22
-        }}>
-          <div style={{ width: '4px', height: '12px', backgroundColor: '#475569' }} />
-          <div style={{
-            position: 'relative',
-            width: '56px',
-            height: '56px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center'
-          }}>
-            <div className={fansOn ? 'fan-spinning' : ''} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Wind size={38} color={fansOn ? '#0284c7' : '#64748b'} />
-            </div>
-          </div>
-          <div style={{
-            marginTop: '-4px',
-            fontSize: '0.65rem',
-            fontWeight: 700,
-            padding: '0.15rem 0.45rem',
-            borderRadius: '4px',
-            backgroundColor: fansOn ? '#e0f2fe' : '#f1f5f9',
-            color: fansOn ? '#0369a1' : '#64748b',
-            border: fansOn ? '1px solid #7dd3fc' : '1px solid #cbd5e1'
-          }}>
-            FAN: {fansOn ? 'SPINNING (300W)' : 'OFF'}
-          </div>
-        </div>
-
-        {/* Right Fan */}
-        <div style={{
-          position: 'absolute',
-          top: '48px',
-          right: '12%',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          zIndex: 22
-        }}>
-          <div style={{ width: '4px', height: '12px', backgroundColor: '#475569' }} />
-          <div style={{
-            position: 'relative',
-            width: '56px',
-            height: '56px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center'
-          }}>
-            <div className={fansOn ? 'fan-spinning' : ''} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Wind size={38} color={fansOn ? '#0284c7' : '#64748b'} />
-            </div>
-          </div>
-          <div style={{
-            marginTop: '-4px',
-            fontSize: '0.65rem',
-            fontWeight: 700,
-            padding: '0.15rem 0.45rem',
-            borderRadius: '4px',
-            backgroundColor: fansOn ? '#e0f2fe' : '#f1f5f9',
-            color: fansOn ? '#0369a1' : '#64748b',
-            border: fansOn ? '1px solid #7dd3fc' : '1px solid #cbd5e1'
-          }}>
-            FAN: {fansOn ? 'SPINNING (300W)' : 'OFF'}
-          </div>
-        </div>
-
-        {/* LEFT WALL: WINDOW WITH DAYLIGHT */}
-        <div style={{
-          position: 'absolute',
-          top: '60px',
-          left: '12px',
-          width: '75px',
-          height: '115px',
-          backgroundColor: lux > 500 ? '#bae6fd' : lux > 250 ? '#93c5fd' : '#475569',
-          border: '4px solid #1e293b',
-          borderRadius: '4px',
-          boxShadow: 'inset 0 0 15px rgba(255,255,255,0.6)',
-          overflow: 'hidden',
-          display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'space-between',
-          padding: '4px',
-          zIndex: 6
-        }}>
-          <div style={{
-            fontSize: '0.6rem',
-            fontWeight: 700,
-            color: lux > 300 ? '#0369a1' : '#cbd5e1',
-            textAlign: 'center'
-          }}>
-            {isWindowOpen ? 'Window Open' : 'Window Closed'}
-          </div>
-          <div style={{ height: '2px', backgroundColor: '#1e293b', margin: 'auto 0' }} />
-          <div style={{
-            fontSize: '0.58rem',
-            textAlign: 'center',
-            color: lux > 300 ? '#0369a1' : '#cbd5e1',
-            fontWeight: 600
-          }}>
-            {lux.toFixed(0)} Lux Ext.
-          </div>
-        </div>
-
-        {/* RIGHT WALL: CLASSROOM DOOR */}
-        <div style={{
-          position: 'absolute',
-          top: '40px',
-          right: '15px',
-          width: '65px',
-          height: '135px',
-          backgroundColor: isDoorOpen ? '#334155' : '#78350f',
-          border: '4px solid #1e293b',
-          borderRadius: '4px 4px 0 0',
-          display: 'flex',
-          flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'space-between',
-          padding: '6px 4px',
-          zIndex: 6
-        }}>
-          <span style={{ fontSize: '0.62rem', fontWeight: 700, color: '#fef3c7' }}>
-            {isDoorOpen ? 'DOOR OPEN' : 'DOOR CLOSED'}
-          </span>
-          {!isDoorOpen && (
-            <div style={{ width: '8px', height: '8px', backgroundColor: '#fbbf24', borderRadius: '50%', alignSelf: 'flex-start', marginLeft: '6px' }} />
-          )}
-          <span style={{ fontSize: '0.55rem', color: '#cbd5e1' }}>Class 301</span>
-        </div>
-
-        {/* TEACHER PODIUM / DESK */}
-        <div style={{
-          position: 'absolute',
-          top: '215px',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          width: '140px',
-          height: '42px',
-          backgroundColor: '#451a03',
-          border: '2px solid #292524',
-          borderRadius: '6px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          boxShadow: '0 4px 8px rgba(0,0,0,0.25)',
+          marginBottom: '10px',
+          position: 'relative',
           zIndex: 10
         }}>
+          {/* Left Window */}
           <div style={{
-            width: '36px',
-            height: '24px',
-            backgroundColor: '#0f172a',
-            border: '2px solid #38bdf8',
-            borderRadius: '3px',
+            width: '80px',
+            height: '55px',
+            backgroundColor: lux > 500 ? '#bae6fd' : lux > 250 ? '#93c5fd' : '#475569',
+            border: '3px solid #1e293b',
+            borderRadius: '4px',
             display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'center',
+            alignItems: 'center',
+            fontSize: '0.62rem',
+            fontWeight: 700,
+            color: '#0f172a'
+          }}>
+            <span>{isWindowOpen ? 'Window Open' : 'Window Closed'}</span>
+            <span style={{ fontSize: '0.55rem', color: '#334155' }}>{lux.toFixed(0)} Lux</span>
+          </div>
+
+          {/* Center: Smart Whiteboard & Projector */}
+          <div style={{
+            width: '320px',
+            height: '75px',
+            backgroundColor: projectorOn ? '#0f172a' : '#f8fafc',
+            border: '4px solid #334155',
+            borderRadius: '6px',
+            boxShadow: projectorOn ? '0 0 25px rgba(59, 130, 246, 0.5)' : 'none',
+            display: 'flex',
+            flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'center',
-            fontSize: '0.55rem',
-            color: '#38bdf8',
-            fontWeight: 700
+            color: projectorOn ? '#38bdf8' : '#64748b',
+            transition: 'all 0.3s ease',
+            position: 'relative'
           }}>
-            AI AGY
+            {projectorOn ? (
+              <div style={{ textAlign: 'center', padding: '0.2rem' }}>
+                <div style={{ fontSize: '0.68rem', fontWeight: 700, color: '#93c5fd' }}>
+                  📺 {activity === 'Lab' ? 'Lab Exercise: Smart Energy Agent' : 'Lecture: Zone-Based Dynamic Fan Agent'}
+                </div>
+                <div style={{ fontSize: '0.58rem', color: '#94a3b8' }}>
+                  Projector ON (250 W) — High Utility Media
+                </div>
+              </div>
+            ) : (
+              <div style={{ textAlign: 'center' }}>
+                <span style={{ fontSize: '0.7rem', fontWeight: 600 }}>Whiteboard (Projector Standby - 0W)</span>
+              </div>
+            )}
           </div>
-          <span style={{ marginLeft: '8px', color: '#fef3c7', fontSize: '0.68rem', fontWeight: 600 }}>
-            Teacher Desk
-          </span>
+
+          {/* Right: Door */}
+          <div style={{
+            width: '65px',
+            height: '65px',
+            backgroundColor: isDoorOpen ? '#334155' : '#78350f',
+            border: '3px solid #1e293b',
+            borderRadius: '4px',
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'center',
+            alignItems: 'center',
+            fontSize: '0.62rem',
+            fontWeight: 700,
+            color: '#fef3c7'
+          }}>
+            {isDoorOpen ? <DoorOpen size={18} color="#fbbf24" /> : <DoorClosed size={18} color="#cbd5e1" />}
+            <span>{isDoorOpen ? 'Door Open' : 'Door Closed'}</span>
+          </div>
         </div>
 
-        {/* STUDENT SEATING MATRIX (DESKS & STUDENT AVATARS) */}
+        {/* Lights Indicator Strip */}
         <div style={{
-          position: 'absolute',
-          bottom: '15px',
-          left: '5%',
-          right: '5%',
+          display: 'flex',
+          justifyContent: 'space-around',
+          marginBottom: '10px',
+          position: 'relative',
+          zIndex: 10
+        }}>
+          {['Ceiling Light Left (200W)', 'Ceiling Light Right (200W)'].map((lName, idx) => (
+            <div key={idx} style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.35rem',
+              backgroundColor: lightsOn ? '#fef08a' : '#f1f5f9',
+              border: lightsOn ? '2px solid #eab308' : '1px solid #cbd5e1',
+              borderRadius: '20px',
+              padding: '0.2rem 0.75rem',
+              boxShadow: lightsOn ? '0 0 15px rgba(250, 204, 21, 0.7)' : 'none',
+              fontSize: '0.65rem',
+              fontWeight: 700,
+              color: lightsOn ? '#854d0e' : '#64748b'
+            }}>
+              <Lightbulb size={12} color={lightsOn ? '#ca8a04' : '#64748b'} />
+              <span>{lightsOn ? 'LIGHTS ON (400W Total)' : 'LIGHTS OFF (0W)'}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* ================= 4 CLASSROOM ZONES GRID (2x2 MATRIX) ================= */}
+        <div style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(6, 1fr)',
-          gap: '12px 16px',
+          gridTemplateColumns: '1fr 1fr',
+          gap: '12px',
+          position: 'relative',
           zIndex: 12
         }}>
-          {Array.from({ length: totalDesks }).map((_, idx) => {
-            const hasStudent = idx < occupiedSeats;
+          {zoneList.map((zConfig) => {
+            const zData = zones[zConfig.id] || { students_count: 0, teacher_present: false, student_preference: 'no_preference', teacher_preference: 'no_preference' };
+            const isZoneOccupied = zData.students_count > 0 || zData.teacher_present;
+            const hasPrefOn = zData.student_preference === 'on' || zData.teacher_preference === 'on';
+            const hasPrefOff = zData.student_preference === 'off' || zData.teacher_preference === 'off';
+
             return (
               <div
-                key={idx}
+                key={zConfig.id}
                 style={{
-                  height: '74px',
-                  backgroundColor: '#78350f',
-                  border: '2px solid #451a03',
-                  borderRadius: '6px',
-                  boxShadow: '0 4px 10px rgba(0,0,0,0.2)',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '4px',
+                  backgroundColor: isZoneOccupied ? 'rgba(255, 255, 255, 0.92)' : 'rgba(241, 245, 249, 0.75)',
+                  border: isZoneOccupied ? '2px solid #3b82f6' : '1px dashed #94a3b8',
+                  borderRadius: '10px',
+                  padding: '10px',
+                  boxShadow: isZoneOccupied ? '0 4px 14px rgba(59, 130, 246, 0.15)' : 'none',
+                  transition: 'all 0.3s ease',
                   position: 'relative'
                 }}
               >
-                {/* Desk label */}
-                <div style={{ fontSize: '0.55rem', color: '#fde68a', fontWeight: 600 }}>
-                  Seat {idx + 1}
+                {/* Zone Header */}
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  borderBottom: '1px solid #e2e8f0',
+                  paddingBottom: '6px',
+                  marginBottom: '8px'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <span style={{ fontWeight: 800, fontSize: '0.82rem', color: '#0f172a' }}>
+                      {zConfig.label}
+                    </span>
+                    {zData.teacher_present && (
+                      <span className="badge badge-orange" style={{ fontSize: '0.62rem', padding: '0.1rem 0.4rem' }}>
+                        <GraduationCap size={10} style={{ marginRight: '2px' }} />
+                        Teacher
+                      </span>
+                    )}
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <span className={`badge ${isZoneOccupied ? 'badge-blue' : 'badge-gray'}`} style={{ fontSize: '0.68rem' }}>
+                      <Users size={10} style={{ marginRight: '3px' }} />
+                      {zData.students_count} Students
+                    </span>
+
+                    {/* Preference chip */}
+                    {hasPrefOn && (
+                      <span className="badge badge-green" style={{ fontSize: '0.62rem' }}>
+                        Req: ON
+                      </span>
+                    )}
+                    {hasPrefOff && (
+                      <span className="badge badge-red" style={{ fontSize: '0.62rem' }}>
+                        Req: OFF
+                      </span>
+                    )}
+                  </div>
                 </div>
 
-                {/* Student Avatar when present */}
-                {hasStudent ? (
-                  <div style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    animation: 'fadeIn 0.3s ease'
-                  }}>
-                    {/* Head */}
-                    <div style={{
-                      width: '20px',
-                      height: '20px',
-                      borderRadius: '50%',
-                      backgroundColor: ['#f59e0b', '#3b82f6', '#10b981', '#8b5cf6', '#ec4899'][idx % 5],
-                      border: '2px solid #ffffff',
-                      boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
-                    }} />
-                    {/* Torso */}
-                    <div style={{
-                      width: '26px',
-                      height: '14px',
-                      borderRadius: '4px 4px 0 0',
-                      backgroundColor: '#1e3a8a',
-                      marginTop: '1px'
-                    }} />
-                  </div>
-                ) : (
-                  <div style={{
-                    color: 'rgba(255,255,255,0.4)',
-                    fontSize: '0.62rem',
-                    fontStyle: 'italic',
-                    margin: 'auto 0'
-                  }}>
-                    Vacant
-                  </div>
-                )}
-
-                {/* Notebook / Laptop on desk */}
+                {/* Ceiling Fans in this Zone */}
                 <div style={{
-                  width: '32px',
-                  height: '6px',
-                  backgroundColor: hasStudent ? '#f8fafc' : 'rgba(255,255,255,0.2)',
-                  borderRadius: '2px',
-                  border: '1px solid #451a03'
-                }} />
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 1fr',
+                  gap: '8px',
+                  marginBottom: '10px'
+                }}>
+                  {zConfig.fans.map((fanId) => {
+                    const isFanOn = fanStates[fanId] ?? false;
+                    const isAvailable = fanAvail[fanId] ?? true;
+                    const override = fanOverrides[fanId];
+                    const isOverridden = override !== null && override !== undefined;
+
+                    return (
+                      <div
+                        key={fanId}
+                        style={{
+                          backgroundColor: !isAvailable ? '#fef2f2' : (isFanOn ? '#e0f2fe' : '#f8fafc'),
+                          border: !isAvailable ? '1.5px solid #f87171' : (isFanOn ? '1.5px solid #38bdf8' : '1px solid #cbd5e1'),
+                          borderRadius: '8px',
+                          padding: '6px 8px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          boxShadow: isFanOn ? '0 0 10px rgba(56, 189, 248, 0.4)' : 'none',
+                          transition: 'all 0.25s ease'
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <div style={{
+                            width: '28px',
+                            height: '28px',
+                            borderRadius: '50%',
+                            backgroundColor: isFanOn ? '#0284c7' : '#94a3b8',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            color: '#ffffff'
+                          }}>
+                            <Wind size={16} className={isFanOn ? 'fan-spinning' : ''} />
+                          </div>
+
+                          <div>
+                            <div style={{ fontSize: '0.74rem', fontWeight: 800, color: '#0f172a' }}>
+                              Fan {fanId}
+                            </div>
+                            <div style={{ fontSize: '0.62rem', color: isFanOn ? '#0284c7' : '#64748b', fontWeight: 600 }}>
+                              {isFanOn ? '60 W (Spinning)' : '0 W (OFF)'}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Status badges */}
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
+                          {!isAvailable ? (
+                            <span style={{ fontSize: '0.58rem', fontWeight: 800, color: '#dc2626', backgroundColor: '#fee2e2', padding: '1px 4px', borderRadius: '4px' }}>
+                              FAULTY
+                            </span>
+                          ) : (
+                            <span style={{
+                              fontSize: '0.6rem',
+                              fontWeight: 800,
+                              color: isFanOn ? '#0369a1' : '#64748b',
+                              backgroundColor: isFanOn ? '#bae6fd' : '#e2e8f0',
+                              padding: '1px 5px',
+                              borderRadius: '4px'
+                            }}>
+                              {isFanOn ? 'ON' : 'OFF'}
+                            </span>
+                          )}
+
+                          {isOverridden && (
+                            <span style={{ fontSize: '0.55rem', fontWeight: 700, color: '#b45309', backgroundColor: '#fef3c7', padding: '1px 3px', borderRadius: '3px' }}>
+                              🔒 Override
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Seating Representation for this Zone */}
+                <div style={{
+                  backgroundColor: '#78350f',
+                  borderRadius: '6px',
+                  padding: '6px',
+                  border: '1.5px solid #451a03',
+                  minHeight: '48px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '6px'
+                }}>
+                  {/* Teacher Podium in Zone A */}
+                  {zConfig.id === "Zone A" && zData.teacher_present && (
+                    <div style={{
+                      backgroundColor: '#1e3a8a',
+                      color: '#ffffff',
+                      borderRadius: '4px',
+                      padding: '2px 6px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '3px',
+                      fontSize: '0.62rem',
+                      fontWeight: 700,
+                      border: '1px solid #60a5fa'
+                    }}>
+                      <GraduationCap size={12} />
+                      <span>Teacher Desk</span>
+                    </div>
+                  )}
+
+                  {/* Student Avatars Grid */}
+                  <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', flex: 1 }}>
+                    {zData.students_count > 0 ? (
+                      Array.from({ length: Math.min(8, Math.max(1, Math.ceil(zData.students_count / 3))) }).map((_, sIdx) => (
+                        <div
+                          key={sIdx}
+                          style={{
+                            width: '18px',
+                            height: '18px',
+                            borderRadius: '50%',
+                            backgroundColor: ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6'][sIdx % 4],
+                            border: '1.5px solid #ffffff',
+                            boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: '0.5rem',
+                            color: '#ffffff',
+                            fontWeight: 800
+                          }}
+                          title={`Student in ${zConfig.id}`}
+                        >
+                          👤
+                        </div>
+                      ))
+                    ) : (
+                      <span style={{ fontSize: '0.62rem', color: '#fde68a', fontStyle: 'italic' }}>
+                        Vacant Zone (0 Desks Occupied)
+                      </span>
+                    )}
+                  </div>
+                </div>
               </div>
             );
           })}
@@ -598,21 +522,24 @@ export default function ClassroomVisualizer({ percepts, devices, activeAgent, la
         flexWrap: 'wrap',
         gap: '0.75rem'
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.82rem' }}>
-          <span style={{ fontWeight: 700, color: 'var(--primary-navy)' }}>Active Device Decision:</span>
-          <span className={`badge ${lightsOn ? 'badge-green' : 'badge-gray'}`}>
-            Lights: {lightsOn ? 'ON (400W)' : 'OFF'}
-          </span>
-          <span className={`badge ${fansOn ? 'badge-green' : 'badge-gray'}`}>
-            Fans: {fansOn ? 'ON (300W)' : 'OFF'}
-          </span>
-          <span className={`badge ${projectorOn ? 'badge-green' : 'badge-gray'}`}>
-            Projector: {projectorOn ? 'ON (250W)' : 'OFF'}
-          </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', fontSize: '0.82rem', flexWrap: 'wrap' }}>
+          <span style={{ fontWeight: 800, color: 'var(--primary-navy)' }}>Dynamic Fan Allocation:</span>
+          {zoneList.map((z) => {
+            const zFansOn = z.fans.filter(f => fanStates[f]);
+            return (
+              <span
+                key={z.id}
+                className={`badge ${zFansOn.length > 0 ? 'badge-green' : 'badge-gray'}`}
+                style={{ fontSize: '0.72rem' }}
+              >
+                {z.id}: {zFansOn.length > 0 ? `${zFansOn.length} Fan ON (F${zFansOn.join(',')})` : 'OFF'}
+              </span>
+            );
+          })}
         </div>
 
         <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-          Total Power: <strong style={{ color: 'var(--primary-navy)' }}>{devices?.power_watts ? devices.power_watts() : ((lightsOn ? 400 : 0) + (fansOn ? 300 : 0) + (projectorOn ? 250 : 0))} W</strong>
+          Active Fan Load: <strong style={{ color: '#0284c7' }}>{activeFanCount} Fans × 60W = {fanPowerW} W</strong> | Total Classroom Load: <strong style={{ color: 'var(--primary-navy)' }}>{devices?.power_watts ? devices.power_watts() : ((lightsOn ? 400 : 0) + (projectorOn ? 250 : 0) + fanPowerW)} W</strong>
         </div>
       </div>
     </div>

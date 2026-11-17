@@ -14,6 +14,7 @@ export default function SimulatorPage({
   onSelectAgent,
   onApplyManual,
   onResetDefault,
+  onStateUpdate,
   isLoading
 }) {
   const percepts = state?.current_percepts;
@@ -85,8 +86,10 @@ export default function SimulatorPage({
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
           <ManualControlPanel
             currentPercepts={percepts}
+            currentDevices={devices}
             onApplyManual={onApplyManual}
             onResetDefault={onResetDefault}
+            onStateUpdate={onStateUpdate}
             isLoading={isLoading}
           />
         </div>

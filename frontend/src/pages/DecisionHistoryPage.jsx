@@ -52,31 +52,36 @@ export default function DecisionHistoryPage() {
   const handleExportCSV = () => {
     if (history.length === 0) return;
     const headers = [
-      'ID', 'Timestamp', 'Simulated Time', 'Students', 'Temp (°C)', 'Light (lux)', 
-      'Activity', 'Agent', 'Lights', 'Fans', 'Projector', 'Power (W)', 'Comfort', 'Reason'
+      'ID', 'Timestamp', 'Simulated Time', 'Mode', 'Students', 'Zone Occupancy',
+      'Temp (°C)', 'Light (lux)', 'Activity', 'Agent', 'Lights', 'Active Fans', 
+      'Fan Power (W)', 'Fan States', 'Projector', 'Total Power (W)', 'Comfort', 'Reason'
     ];
     const rows = history.map(item => [
       item.id,
       `"${item.timestamp}"`,
       `"${item.simulated_time}"`,
+      `"${item.mode || 'automatic'}"`,
       item.students_count,
+      item.zone_occupancy ? `"${JSON.stringify(item.zone_occupancy).replace(/"/g, '""')}"` : '""',
       item.temperature,
       item.light_intensity,
       `"${item.activity}"`,
       `"${item.agent_type}"`,
       item.lights ? 'ON' : 'OFF',
-      item.fans ? 'ON' : 'OFF',
+      item.active_fan_count || (item.fans ? 1 : 0),
+      item.fan_power_w || (item.fans ? 60 : 0),
+      item.fan_states ? `"${JSON.stringify(item.fan_states).replace(/"/g, '""')}"` : '""',
       item.projector ? 'ON' : 'OFF',
       item.power_w,
       item.comfort_score,
-      `"${item.reason.replace(/"/g, '""')}"`
+      `"${(item.reason || '').replace(/"/g, '""')}"`
     ]);
 
     const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `classroom_decisions_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.setAttribute('download', `classroom_zone_decisions_${new Date().toISOString().slice(0, 10)}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -89,9 +94,9 @@ export default function DecisionHistoryPage() {
     }
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
-      const matchReason = item.reason.toLowerCase().includes(term);
-      const matchTime = item.simulated_time.toLowerCase().includes(term);
-      const matchActivity = item.activity.toLowerCase().includes(term);
+      const matchReason = (item.reason || '').toLowerCase().includes(term);
+      const matchTime = (item.simulated_time || '').toLowerCase().includes(term);
+      const matchActivity = (item.activity || '').toLowerCase().includes(term);
       if (!matchReason && !matchTime && !matchActivity) {
         return false;
       }
@@ -108,7 +113,7 @@ export default function DecisionHistoryPage() {
             Autonomous Decision History Audit Log
           </h1>
           <p style={{ fontSize: '0.86rem', color: 'var(--text-muted)' }}>
-            Chronological audit log of every percept evaluated, device actuated, and rational justification stored in SQLite.
+            Chronological audit log of every percept evaluated, 8-fan zone state actuated, and rational justification stored in SQLite.
           </p>
         </div>
 
@@ -172,7 +177,7 @@ export default function DecisionHistoryPage() {
             <input
               type="text"
               className="form-input"
-              placeholder="Search explanations, time, activity..."
+              placeholder="Search explanations, time, activity, zone..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               style={{ padding: '0.45rem 0.75rem', fontSize: '0.84rem' }}
@@ -217,88 +222,125 @@ export default function DecisionHistoryPage() {
             <table className="custom-table">
               <thead>
                 <tr>
-                  <th>Time</th>
-                  <th>Students</th>
-                  <th>Temp</th>
-                  <th>Light</th>
-                  <th>Activity</th>
+                  <th>Time / Mode</th>
+                  <th>Occupancy</th>
+                  <th>Climate</th>
                   <th>Agent</th>
-                  <th>Device Actions</th>
-                  <th>Power (W)</th>
+                  <th>Lights & Projector</th>
+                  <th>Zone Fans (8 Units)</th>
+                  <th>Total Power</th>
                   <th>Comfort</th>
-                  <th>Decision Justification</th>
+                  <th style={{ minWidth: '220px' }}>Decision Justification</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredHistory.map((item) => (
-                  <tr key={item.id}>
-                    <td>
-                      <div style={{ fontWeight: 700, color: 'var(--primary-navy)' }}>
-                        {item.simulated_time}
-                      </div>
-                      <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-                        {item.timestamp.slice(11)}
-                      </div>
-                    </td>
+                {filteredHistory.map((item) => {
+                  const fanCount = item.active_fan_count || (item.fans ? 1 : 0);
+                  const fanPower = item.fan_power_w || (item.fans ? 60 : 0);
+                  const fanStates = item.fan_states || {};
+                  const activeFanIds = Object.entries(fanStates).filter(([_, state]) => state).map(([id]) => `F${id}`);
 
-                    <td>
-                      <span className={`badge ${item.students_count > 0 ? 'badge-blue' : 'badge-gray'}`}>
-                        {item.students_count} st.
-                      </span>
-                    </td>
-
-                    <td>
-                      <strong style={{ color: item.temperature > 26 ? '#ef4444' : item.temperature < 22 ? '#3b82f6' : '#10b981' }}>
-                        {item.temperature}°C
-                      </strong>
-                    </td>
-
-                    <td>{item.light_intensity} lux</td>
-
-                    <td>
-                      <span className="badge badge-gray">{item.activity}</span>
-                    </td>
-
-                    <td>
-                      <span className="badge badge-blue">
-                        {item.agent_type === 'utility_based' ? 'Utility' : 
-                         item.agent_type === 'simple_reflex' ? 'Reflex' : 
-                         item.agent_type === 'model_based' ? 'Model' : 'Goal'}
-                      </span>
-                    </td>
-
-                    {/* Devices */}
-                    <td>
-                      <div style={{ display: 'flex', gap: '0.35rem' }}>
-                        <span className={`badge ${item.lights ? 'badge-green' : 'badge-gray'}`} title="Lights">
-                          L: {item.lights ? 'ON' : 'OFF'}
+                  return (
+                    <tr key={item.id}>
+                      {/* Time / Mode */}
+                      <td>
+                        <div style={{ fontWeight: 700, color: 'var(--primary-navy)' }}>
+                          {item.simulated_time}
+                        </div>
+                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                          {item.timestamp.slice(11)}
+                        </div>
+                        <span className={`badge ${item.mode === 'manual' ? 'badge-orange' : 'badge-blue'}`} style={{ fontSize: '0.62rem', marginTop: '0.2rem' }}>
+                          {item.mode === 'manual' ? 'MANUAL' : 'AUTO'}
                         </span>
-                        <span className={`badge ${item.fans ? 'badge-green' : 'badge-gray'}`} title="Fans">
-                          F: {item.fans ? 'ON' : 'OFF'}
+                      </td>
+
+                      {/* Occupancy & Zones */}
+                      <td>
+                        <span className={`badge ${item.students_count > 0 ? 'badge-blue' : 'badge-gray'}`}>
+                          {item.students_count} st.
                         </span>
-                        <span className={`badge ${item.projector ? 'badge-green' : 'badge-gray'}`} title="Projector">
-                          P: {item.projector ? 'ON' : 'OFF'}
+                        {item.zone_occupancy && (
+                          <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
+                            A:{item.zone_occupancy['Zone A'] ?? 0} B:{item.zone_occupancy['Zone B'] ?? 0}<br />
+                            C:{item.zone_occupancy['Zone C'] ?? 0} D:{item.zone_occupancy['Zone D'] ?? 0}
+                          </div>
+                        )}
+                      </td>
+
+                      {/* Climate */}
+                      <td>
+                        <strong style={{ color: item.temperature > 26 ? '#ef4444' : item.temperature < 22 ? '#3b82f6' : '#10b981' }}>
+                          {item.temperature}°C
+                        </strong>
+                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                          {item.light_intensity} lux
+                        </div>
+                        <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                          {item.activity}
+                        </div>
+                      </td>
+
+                      {/* Agent */}
+                      <td>
+                        <span className="badge badge-blue">
+                          {item.agent_type === 'utility_based' ? 'Utility' : 
+                           item.agent_type === 'simple_reflex' ? 'Reflex' : 
+                           item.agent_type === 'model_based' ? 'Model' : 'Goal'}
                         </span>
-                      </div>
-                    </td>
+                      </td>
 
-                    <td>
-                      <strong>{item.power_w} W</strong>
-                    </td>
+                      {/* Lights & Projector */}
+                      <td>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                          <span className={`badge ${item.lights ? 'badge-green' : 'badge-gray'}`} style={{ fontSize: '0.68rem' }}>
+                            Lights: {item.lights ? 'ON (400W)' : 'OFF'}
+                          </span>
+                          <span className={`badge ${item.projector ? 'badge-green' : 'badge-gray'}`} style={{ fontSize: '0.68rem' }}>
+                            Proj: {item.projector ? 'ON (250W)' : 'OFF'}
+                          </span>
+                        </div>
+                      </td>
 
-                    <td>
-                      <span style={{ fontWeight: 700, color: item.comfort_score >= 80 ? '#059669' : '#d97706' }}>
-                        {item.comfort_score}
-                      </span>
-                    </td>
+                      {/* Zone Fans (8 Units) */}
+                      <td>
+                        <div>
+                          <span className={`badge ${fanCount > 0 ? 'badge-green' : 'badge-gray'}`}>
+                            {fanCount > 0 ? `${fanCount}/8 Fans ON (${fanPower}W)` : 'All Fans OFF (0W)'}
+                          </span>
+                          {activeFanIds.length > 0 && (
+                            <div style={{ fontSize: '0.68rem', color: '#0369a1', marginTop: '0.2rem', fontWeight: 600 }}>
+                              Active: {activeFanIds.join(', ')}
+                            </div>
+                          )}
+                        </div>
+                      </td>
 
-                    <td style={{ maxWidth: '380px' }}>
-                      <p style={{ fontSize: '0.8rem', color: 'var(--text-main)', lineHeight: 1.35, margin: 0 }}>
-                        {item.reason}
-                      </p>
-                    </td>
-                  </tr>
-                ))}
+                      {/* Total Power */}
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                          <span style={{ fontWeight: 700, color: 'var(--primary-navy)' }}>
+                            {item.power_w.toFixed(0)} W
+                          </span>
+                        </div>
+                      </td>
+
+                      {/* Comfort */}
+                      <td>
+                        <strong style={{ color: item.comfort_score >= 80 ? '#059669' : '#d97706' }}>
+                          {item.comfort_score.toFixed(0)}
+                        </strong>
+                      </td>
+
+                      {/* Decision Justification */}
+                      <td>
+                        <div style={{ fontSize: '0.78rem', color: 'var(--primary-navy)', lineHeight: 1.35 }}>
+                          {item.reason}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

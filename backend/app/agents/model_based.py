@@ -4,43 +4,46 @@ from app.models.schemas import (
     DeviceState,
     AgentDecision,
     AgentType,
-    SimulationConfig
+    SimulationConfig,
+    ZONE_FAN_MAPPING,
+    FAN_ZONE_MAPPING
 )
 from app.agents.base_agent import (
     BaseAgent,
     calculate_comfort_score,
     calculate_energy_efficiency_score,
-    calculate_operational_compliance_score,
+    calculate_occupancy_coverage_score,
+    calculate_preference_satisfaction_score,
     calculate_total_utility,
     LIGHTS_POWER_W,
-    FANS_POWER_W,
-    PROJECTOR_POWER_W
+    PROJECTOR_POWER_W,
+    FAN_POWER_PER_UNIT_W
 )
 
 
 class ModelBasedAgent(BaseAgent):
     """
-    Model-Based Agent:
-    Maintains an internal model of how the classroom environment evolves,
-    including history of past percepts, smoothed sensor values, and state confidence.
-    Filters transient glitches (e.g. temporary 0-occupancy sensor dropout during lecture).
+    Model-Based Agent with Dynamic Zone-Based Fan Control:
+    Maintains an internal state of previous zone occupancies, previous fan states,
+    consecutive zero readings per zone, and temperature trends.
+    Uses temporal memory to prevent rapid fan cycling and filters transient sensor dropouts per zone.
     """
     def __init__(self):
         super().__init__(AgentType.MODEL_BASED, "Model-Based Agent")
         self.previous_percepts: Optional[ClassroomPercepts] = None
         self.previous_device_state: Optional[DeviceState] = None
-        self.consecutive_zero_occupancy: int = 0
+        self.consecutive_empty_per_zone: Dict[str, int] = {"Zone A": 0, "Zone B": 0, "Zone C": 0, "Zone D": 0}
+        self.consecutive_empty_classroom: int = 0
         self.smoothed_temperature: Optional[float] = None
         self.smoothed_light: Optional[float] = None
-        self.step_history: List[Dict[str, Any]] = []
 
     def reset_internal_state(self):
         self.previous_percepts = None
         self.previous_device_state = None
-        self.consecutive_zero_occupancy = 0
+        self.consecutive_empty_per_zone = {"Zone A": 0, "Zone B": 0, "Zone C": 0, "Zone D": 0}
+        self.consecutive_empty_classroom = 0
         self.smoothed_temperature = None
         self.smoothed_light = None
-        self.step_history.clear()
 
     def decide(
         self,
@@ -48,58 +51,19 @@ class ModelBasedAgent(BaseAgent):
         current_devices: DeviceState,
         config: SimulationConfig
     ) -> AgentDecision:
-        # 1. Update internal sensor smoothing (Exponential Moving Average)
+        # 1. Update exponential moving averages for environmental percepts
         alpha = 0.65
         if self.smoothed_temperature is None:
             self.smoothed_temperature = percepts.temperature
         else:
-            self.smoothed_temperature = round(
-                alpha * percepts.temperature + (1 - alpha) * self.smoothed_temperature, 1
-            )
+            self.smoothed_temperature = round(alpha * percepts.temperature + (1 - alpha) * self.smoothed_temperature, 1)
 
         if self.smoothed_light is None:
             self.smoothed_light = percepts.light_intensity
         else:
-            self.smoothed_light = round(
-                alpha * percepts.light_intensity + (1 - alpha) * self.smoothed_light, 1
-            )
+            self.smoothed_light = round(alpha * percepts.light_intensity + (1 - alpha) * self.smoothed_light, 1)
 
-        # 2. Determine occupancy confidence and glitch filtering
-        raw_occupancy = percepts.students_count
-        was_previously_occupied = (
-            self.previous_percepts is not None and self.previous_percepts.students_count > 0
-        )
-        was_lecture_or_lab = (
-            self.previous_percepts is not None and self.previous_percepts.activity in ["Lecture", "Lab"]
-        )
-
-        sensor_glitch_suspected = False
-        confirmed_vacant = False
-
-        if raw_occupancy == 0:
-            self.consecutive_zero_occupancy += 1
-            # If room was just holding an active lecture with many students, a sudden 0 reading
-            # is treated as a probable momentary sensor fluctuation or line-of-sight occlusion
-            if was_previously_occupied and was_lecture_or_lab and self.consecutive_zero_occupancy < 2:
-                sensor_glitch_suspected = True
-                confirmed_occupancy = True
-                occupancy_status_desc = (
-                    f"Sensor reads 0 students, but internal model retains occupancy state "
-                    f"({self.previous_percepts.students_count} students in {self.previous_percepts.activity} previously). "
-                    f"Awaiting confirmation (Streak: {self.consecutive_zero_occupancy}/2 readings)."
-                )
-            else:
-                confirmed_vacant = True
-                confirmed_occupancy = False
-                occupancy_status_desc = (
-                    f"Vacancy confirmed across {self.consecutive_zero_occupancy} consecutive reading(s)."
-                )
-        else:
-            self.consecutive_zero_occupancy = 0
-            confirmed_occupancy = True
-            occupancy_status_desc = f"Occupancy verified: {raw_occupancy} students present."
-
-        # 3. Model temperature trend & environmental dynamics
+        # 2. Temperature trend
         temp_trend = "Stable"
         if self.previous_percepts is not None:
             delta_t = percepts.temperature - self.previous_percepts.temperature
@@ -108,107 +72,188 @@ class ModelBasedAgent(BaseAgent):
             elif delta_t < -0.4:
                 temp_trend = f"Falling ({delta_t:.1f}°C)"
 
-        # 4. Formulate device decisions based on internal model
-        new_lights = False
-        new_fans = False
-        new_projector = False
-        decision_reasons = []
-
-        if confirmed_vacant:
-            new_lights = False
-            new_fans = False
-            new_projector = False
-            decision_reasons.append("Model confirms classroom is vacant: all devices set to OFF.")
+        # 3. Overall classroom vacancy tracking
+        if not percepts.is_occupied:
+            self.consecutive_empty_classroom += 1
         else:
-            # Lights decision: check smoothed lux and window status
-            if self.smoothed_light < config.light_threshold_lux:
-                new_lights = True
-                decision_reasons.append(
-                    f"Smoothed light ({self.smoothed_light:.0f} lux) is below target threshold ({config.light_threshold_lux:.0f} lux) -> Lights ON."
-                )
-            else:
-                new_lights = False
-                decision_reasons.append(
-                    f"Smoothed natural light ({self.smoothed_light:.0f} lux) satisfies requirements -> Lights OFF."
-                )
+            self.consecutive_empty_classroom = 0
 
-            # Fans decision: utilize hysteresis (26.0 threshold with 0.5°C hysteresis)
-            cooling_needed = self.smoothed_temperature > config.temp_comfort_max
-            # Proactive ventilation: if window is open and temperature is warm, keep air flowing
-            if cooling_needed or (self.smoothed_temperature >= 25.0 and percepts.window_status.value == "Open" and percepts.door_status.value == "Closed"):
-                new_fans = True
-                decision_reasons.append(
-                    f"Smoothed temp is {self.smoothed_temperature:.1f}°C (Trend: {temp_trend}) -> Fans ON for thermal regulation."
-                )
-            elif self.smoothed_temperature < config.temp_comfort_min:
-                new_fans = False
-                decision_reasons.append(
-                    f"Smoothed temp ({self.smoothed_temperature:.1f}°C) is below comfort threshold -> Fans OFF."
-                )
+        # Lights & Projector decisions
+        new_lights = False
+        new_projector = False
+        if percepts.is_occupied:
+            new_lights = self.smoothed_light < config.light_threshold_lux
+            if percepts.activity in ["Lecture", "Lab"]:
+                new_projector = True
             else:
-                new_fans = False
-                decision_reasons.append(
-                    f"Smoothed temp ({self.smoothed_temperature:.1f}°C) within neutral comfort zone -> Fans OFF."
-                )
+                new_projector = False
 
-            # Projector decision: retain state during glitch; otherwise follow activity
-            if sensor_glitch_suspected:
-                # Maintain previous state to prevent presentation interruption
-                new_projector = current_devices.projector
-                decision_reasons.append(
-                    "Potential sensor dropout: preserving projector state to avoid disrupting ongoing lecture."
-                )
+        # ==================== ZONE-WISE FAN MODEL LOGIC ====================
+        new_fan_states: Dict[int, bool] = {i: False for i in range(1, 9)}
+        zone_reasons = {}
+        zone_fan_allocations = {"Zone A": [], "Zone B": [], "Zone C": [], "Zone D": []}
+        glitch_filtered_zones = []
+
+        is_hot = self.smoothed_temperature >= config.fan_activation_temp or self.smoothed_temperature > config.temp_comfort_max
+
+        for zone_id, zone in percepts.zones.items():
+            zone_fans = zone.fans
+            available_fans = [f for f in zone_fans if percepts.fan_availability.get(f, True)]
+
+            # Check consecutive zero readings in this zone
+            prev_zone_count = 0
+            if self.previous_percepts and zone_id in self.previous_percepts.zones:
+                prev_zone_count = self.previous_percepts.zones[zone_id].students_count
+
+            if not zone.is_occupied:
+                self.consecutive_empty_per_zone[zone_id] += 1
             else:
-                if percepts.activity in ["Lecture", "Lab"]:
-                    new_projector = True
-                    decision_reasons.append(
-                        f"Active instructional phase ({percepts.activity.value}) requires presentation media -> Projector ON."
-                    )
+                self.consecutive_empty_per_zone[zone_id] = 0
+
+            # Transient glitch / occlusion detection per zone:
+            # If zone was occupied previously with >= 5 students during active class,
+            # and suddenly reads 0, require 2 consecutive zero readings before switching OFF
+            zone_glitch_suspected = False
+            if zone.students_count == 0 and not zone.teacher_present:
+                if prev_zone_count >= 5 and self.consecutive_empty_per_zone[zone_id] < 2:
+                    zone_glitch_suspected = True
+                    glitch_filtered_zones.append(zone_id)
+
+            # Check manual overrides for fans in this zone
+            has_overrides = {f: percepts.fan_manual_overrides.get(f) for f in zone_fans if percepts.fan_manual_overrides.get(f) is not None}
+
+            if not zone.is_occupied and not zone_glitch_suspected:
+                # Confirmed empty zone
+                for f in zone_fans:
+                    if f in has_overrides:
+                        new_fan_states[f] = has_overrides[f]
+                    else:
+                        new_fan_states[f] = False
+                zone_reasons[zone_id] = f"{zone_id} confirmed vacant ({self.consecutive_empty_per_zone[zone_id]} streak): fans OFF."
+                continue
+
+            if zone_glitch_suspected:
+                # Maintain previous fan state for this zone to avoid jarring shutoff during lecture
+                prev_fans_on = []
+                if self.previous_device_state:
+                    prev_fans_on = [f for f in zone_fans if self.previous_device_state.fan_states.get(f, False)]
+
+                for f in zone_fans:
+                    if f in has_overrides:
+                        new_fan_states[f] = has_overrides[f]
+                    else:
+                        new_fan_states[f] = (f in prev_fans_on)
+                zone_reasons[zone_id] = f"Potential sensor dropout in {zone_id} (previously {prev_zone_count} students). Memory model maintains fan state pending verification."
+                zone_fan_allocations[zone_id] = [f for f in zone_fans if new_fan_states[f]]
+                continue
+
+            # Zone is actively occupied:
+            # Resolve preferences with teacher priority
+            effective_pref = "no_preference"
+            if zone.teacher_present and zone.teacher_preference != "no_preference":
+                effective_pref = zone.teacher_preference
+            elif zone.student_preference != "no_preference":
+                effective_pref = zone.student_preference
+
+            # Teacher specific target fan
+            teacher_target_fan = percepts.teacher_target_fan
+            specific_target = None
+            if teacher_target_fan in zone_fans and percepts.teacher_zone == zone_id and percepts.fan_availability.get(teacher_target_fan, True):
+                specific_target = teacher_target_fan
+
+            fans_to_turn_on = []
+
+            if effective_pref == "off":
+                zone_reasons[zone_id] = f"{zone_id} occupant preference: OFF."
+            elif effective_pref == "on":
+                needed = 2 if zone.students_count > 10 else 1
+                if specific_target:
+                    fans_to_turn_on.append(specific_target)
+                    rem = [f for f in available_fans if f != specific_target]
+                    if needed > 1 and rem:
+                        fans_to_turn_on.append(rem[0])
                 else:
-                    new_projector = False
-                    decision_reasons.append(
-                        f"Phase ({percepts.activity.value}) requires no display media -> Projector OFF."
-                    )
+                    fans_to_turn_on = available_fans[:needed]
+                zone_reasons[zone_id] = f"{zone_id} explicit ON preference fulfilled ({len(fans_to_turn_on)} fan active)."
+            elif is_hot:
+                # Hysteresis / proactive cooling with temperature trend
+                needed = 2 if zone.students_count > 10 else 1
+                if specific_target:
+                    fans_to_turn_on.append(specific_target)
+                    rem = [f for f in available_fans if f != specific_target]
+                    if needed > 1 and rem:
+                        fans_to_turn_on.append(rem[0])
+                else:
+                    fans_to_turn_on = available_fans[:needed]
+                zone_reasons[zone_id] = f"{zone_id} occupied ({zone.students_count} st.) in warm air ({self.smoothed_temperature}°C, {temp_trend}): {len(fans_to_turn_on)} fan(s) active."
+            else:
+                if specific_target:
+                    fans_to_turn_on.append(specific_target)
+                    zone_reasons[zone_id] = f"Teacher requested Fan {specific_target} in {zone_id} activated."
+                else:
+                    zone_reasons[zone_id] = f"{zone_id} comfortable ({self.smoothed_temperature}°C): fans OFF."
 
-        selected_state = DeviceState(lights=new_lights, fans=new_fans, projector=new_projector)
-        power_w = selected_state.power_watts(LIGHTS_POWER_W, FANS_POWER_W, PROJECTOR_POWER_W)
+            for f in zone_fans:
+                if f in has_overrides:
+                    new_fan_states[f] = has_overrides[f]
+                else:
+                    new_fan_states[f] = (f in fans_to_turn_on)
+
+            zone_fan_allocations[zone_id] = [f for f in zone_fans if new_fan_states[f]]
+
+        # Construct DeviceState
+        selected_state = DeviceState(
+            lights=new_lights,
+            projector=new_projector,
+            fan_states=new_fan_states,
+            fan_availability=percepts.fan_availability,
+            fan_overrides=percepts.fan_manual_overrides
+        )
+
         comfort = calculate_comfort_score(percepts, selected_state, config.light_threshold_lux, config.temp_comfort_min, config.temp_comfort_max)
         efficiency = calculate_energy_efficiency_score(selected_state)
-        compliance = calculate_operational_compliance_score(percepts, selected_state, config.light_threshold_lux)
-        utility = calculate_total_utility(comfort, efficiency, compliance)
+        coverage = calculate_occupancy_coverage_score(percepts, selected_state)
+        pref_satisfaction = calculate_preference_satisfaction_score(percepts, selected_state)
+        utility = calculate_total_utility(comfort, efficiency, coverage, pref_satisfaction)
 
-        # Build internal state snapshot for UI visualization
-        internal_model_snapshot = {
-            "internal_occupancy_belief": "Occupied" if confirmed_occupancy else "Vacant",
-            "occupancy_streak_zeros": self.consecutive_zero_occupancy,
-            "sensor_glitch_filtered": sensor_glitch_suspected,
-            "smoothed_temperature_c": self.smoothed_temperature,
-            "raw_temperature_c": percepts.temperature,
-            "temperature_trend": temp_trend,
-            "smoothed_lux": self.smoothed_light,
-            "raw_lux": percepts.light_intensity,
-            "previous_students": self.previous_percepts.students_count if self.previous_percepts else None,
-            "previous_activity": self.previous_percepts.activity.value if self.previous_percepts else None,
-            "status_notes": occupancy_status_desc
+        active_count = selected_state.active_fan_count
+        active_fan_list = [f"Fan {f}" for f, s in new_fan_states.items() if s]
+
+        internal_memory_snapshot = {
+            "smoothed_temp_c": self.smoothed_temperature,
+            "temp_trend": temp_trend,
+            "consecutive_empty_per_zone": dict(self.consecutive_empty_per_zone),
+            "glitch_filtered_zones": glitch_filtered_zones,
+            "active_fans": active_fan_list
         }
 
-        # Update previous state
-        self.previous_percepts = percepts.model_copy()
-        self.previous_device_state = selected_state.model_copy()
+        # Save previous state
+        self.previous_percepts = percepts.model_copy(deep=True)
+        self.previous_device_state = selected_state.model_copy(deep=True)
+
+        reason = f"Model-Based Memory: {active_count}/8 fans active. Temp Trend: {temp_trend}. "
+        if glitch_filtered_zones:
+            reason += f"Filtered momentary occupancy dropouts in {', '.join(glitch_filtered_zones)}. "
+        reason += " | ".join([f"{zid}: {r}" for zid, r in zone_reasons.items() if "fans OFF" not in r or not percepts.is_occupied][:2])
 
         return AgentDecision(
             agent_type=self.agent_type,
             agent_name=self.agent_name,
             previous_state=current_devices,
             selected_state=selected_state,
-            power_w=power_w,
+            power_w=selected_state.power_watts(),
             comfort_score=comfort,
             energy_efficiency_score=efficiency,
-            operational_compliance_score=compliance,
+            operational_compliance_score=coverage,
             utility_score=utility,
-            reason=" ".join(decision_reasons),
-            matched_rule=f"Internal State Model: {occupancy_status_desc} | Temp Trend: {temp_trend}",
-            internal_state=internal_model_snapshot,
+            reason=reason,
+            matched_rule=f"Internal State Model: Trend={temp_trend} | Vacancy Streaks={self.consecutive_empty_per_zone}",
+            internal_state=internal_memory_snapshot,
             goals_status=None,
-            utility_breakdown=None
+            utility_breakdown=None,
+            fan_states=new_fan_states,
+            active_fan_count=active_count,
+            fan_power_w=selected_state.fan_power_w,
+            zone_fan_allocations=zone_fan_allocations,
+            zone_reasons=zone_reasons
         )
